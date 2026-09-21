@@ -2,9 +2,11 @@ import { Clock3, Flame, Radio, Sparkles, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 
 import { AppShell } from '@/components/layout/app-shell'
+import { ServiceUnavailable } from '@/components/layout/service-unavailable'
 import { CategoryTabs } from '@/components/markets/category-tabs'
 import { MarketGrid } from '@/components/markets/market-grid'
 import { SectionHeading } from '@/components/ui/primitives'
+import { loadOrUnavailable } from '@/lib/db/availability'
 import {
   closingSoonMarkets,
   featuredMarkets,
@@ -19,7 +21,8 @@ import { formatCompactINR, formatCount } from '@/lib/money'
 export const dynamic = 'force-dynamic'
 
 export default async function HomePage() {
-  const [stats, featured, live, closingSoon, newest, topVolume, categoryRows] = await Promise.all([
+  // A database that cannot be read must produce a page, not an empty 500.
+  const loaded = await loadOrUnavailable('home catalog', () => Promise.all([
     platformStats(),
     featuredMarkets(4),
     liveMarkets(6),
@@ -27,7 +30,17 @@ export default async function HomePage() {
     newestMarkets(6),
     highestVolumeMarkets(6),
     getCategories(),
-  ])
+  ]))
+
+  if (!loaded.ok) {
+    return (
+      <AppShell>
+        <ServiceUnavailable reason={loaded.reason} />
+      </AppShell>
+    )
+  }
+
+  const [stats, featured, live, closingSoon, newest, topVolume, categoryRows] = loaded.value
 
   return (
     <AppShell>

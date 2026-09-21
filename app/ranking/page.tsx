@@ -1,8 +1,10 @@
 import { Trophy } from 'lucide-react'
 
 import { AppShell } from '@/components/layout/app-shell'
+import { ServiceUnavailable } from '@/components/layout/service-unavailable'
 import { Card } from '@/components/ui/primitives'
 import { leaderboardFromDb } from '@/lib/data/server-api'
+import { loadOrUnavailable } from '@/lib/db/availability'
 import { formatCompactINR, formatPercent } from '@/lib/money'
 
 export const dynamic = 'force-dynamic'
@@ -13,7 +15,18 @@ export const metadata = {
 }
 
 export default async function RankingPage() {
-  const rows = await leaderboardFromDb()
+  // A database that cannot be read must produce a page, not an empty 500.
+  const loaded = await loadOrUnavailable('leaderboard', () => leaderboardFromDb())
+
+  if (!loaded.ok) {
+    return (
+      <AppShell>
+        <ServiceUnavailable reason={loaded.reason} />
+      </AppShell>
+    )
+  }
+
+  const rows = loaded.value
 
   return (
     <AppShell>

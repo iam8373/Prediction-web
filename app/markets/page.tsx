@@ -1,10 +1,12 @@
 import type { Metadata } from 'next'
 
 import { AppShell } from '@/components/layout/app-shell'
+import { ServiceUnavailable } from '@/components/layout/service-unavailable'
 import { CategoryTabs } from '@/components/markets/category-tabs'
 import { MarketGrid } from '@/components/markets/market-grid'
 import { SortSelect } from '@/components/markets/sort-select'
 import { getCategories, queryMarkets } from '@/lib/data/server-api'
+import { loadOrUnavailable } from '@/lib/db/availability'
 import type { SortKey } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -25,10 +27,21 @@ export default async function MarketsPage({
   const sort = (typeof sp.sort === 'string' ? sp.sort : 'trending') as SortKey
   const status = sp.status === 'resolved' ? 'resolved' : 'live'
 
-  const [result, categoryRows] = await Promise.all([
+  // A database that cannot be read must produce a page, not an empty 500.
+  const loaded = await loadOrUnavailable('market list', () => Promise.all([
     queryMarkets({ category, query, sort, status, perPage: 24 }),
     getCategories(),
-  ])
+  ]))
+
+  if (!loaded.ok) {
+    return (
+      <AppShell>
+        <ServiceUnavailable reason={loaded.reason} />
+      </AppShell>
+    )
+  }
+
+  const [result, categoryRows] = loaded.value
   const categoryRow = category ? categoryRows.find((row) => row.id === category || row.slug === category) : undefined
   const categoryLabel = categoryRow?.name
   const invalidCategory = Boolean(category && !categoryRow)

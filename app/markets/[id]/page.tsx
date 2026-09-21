@@ -2,7 +2,9 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 
 import { AppShell } from '@/components/layout/app-shell'
+import { ServiceUnavailable } from '@/components/layout/service-unavailable'
 import { PriceChart } from '@/components/charts/price-chart'
+import { loadOrUnavailable } from '@/lib/db/availability'
 import { MarketStatusHeader } from '@/components/markets/market-status-header'
 import { WatchlistButton } from '@/components/markets/watchlist-button'
 import { TradePanel } from '@/components/trading/trade-panel'
@@ -19,7 +21,10 @@ export async function generateMetadata({
   params: Promise<{ id: string }>
 }): Promise<Metadata> {
   const { id } = await params
-  const market = await getMarket(id)
+  const loaded = await loadOrUnavailable('market metadata', () => getMarket(id))
+  // Metadata must never throw: an unreadable database is not a "not found".
+  if (!loaded.ok) return { title: 'Market · Predik' }
+  const market = loaded.value
   if (!market) return { title: 'Market not found · Predik' }
   return {
     title: `${market.question} · Predik`,
@@ -37,13 +42,28 @@ export default async function MarketDetailPage({
 }) {
   const { id } = await params
   const { side } = await searchParams
-  const market = await getMarket(id)
-  if (!market) notFound()
 
-  const [trades, stats] = await Promise.all([
-    recentTradesFromDb(market, 8),
-    marketStats(market.id),
-  ])
+  // A database that cannot be read must produce a page, not an empty 500.
+  const loaded = await loadOrUnavailable('market detail', async () => {
+    const market = await getMarket(id)
+    if (!market) return null
+    const [trades, stats] = await Promise.all([
+      recentTradesFromDb(market, 8),
+      marketStats(market.id),
+    ])
+    return { market, trades, stats }
+  })
+
+  if (!loaded.ok) {
+    return (
+      <AppShell>
+        <ServiceUnavailable reason={loaded.reason} />
+      </AppShell>
+    )
+  }
+
+  if (!loaded.value) notFound()
+  const { market, trades, stats } = loaded.value
 
   return (
     <AppShell>

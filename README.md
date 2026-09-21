@@ -599,10 +599,14 @@ Three things worth knowing before deploying:
    every completed transaction has a ledger entry). It is read only, never prints a
    secret, and exits non-zero when anything FAILs. It reports `BLOCKED` — never PASS —
    for anything an external dependency prevents it from verifying.
-2. **`GET /api/health`** is the production probe: `200` when the process is serving and
-   the database answered with the core schema present, `503` otherwise. It also reports
-   `payments.mutationBlocked`, so a monitor can page when a live deployment is refusing
-   to move money. It never returns a connection string, driver message or stack trace.
+2. **`GET /api/health`** is the production *readiness* probe: `200` when the process is
+   serving and the database answered with the core schema present, `503` otherwise. It
+   also reports `payments.mutationBlocked`, so a monitor can page when a live deployment
+   is refusing to move money, and `database.configured`, which separates "no database was
+   ever configured" from "the database is down". It never returns a connection string,
+   driver message or stack trace. Platform health checks should point at
+   **`GET /api/health/live`** instead — that one answers `200` for as long as the process
+   is routing, so a dependency still being provisioned cannot fail a deploy.
 3. **A production runtime never silently degrades its payment mode.** Asking for live
    money without satisfying the gate no longer means "runs sandbox and credits anyway":
    the deployment refuses new deposits and withdrawals with
@@ -627,3 +631,78 @@ Three things worth knowing before deploying:
    fixing them requires upgrading `next`, which is outside this phase.
 6. Run `pnpm preflight` against the production environment and resolve every FAIL.
    Treat `BLOCKED` as unverified, not as passing.
+
+### Deploying (Railway, and what a broken deploy looks like)
+
+A deployment needs three host settings and one database:
+
+| Setting | Value |
+|---|---|
+| Build | `pnpm build` (the host's own Next.js detection is fine) |
+| Start | `pnpm start` (`next start`) |
+| Health check path | `/api/health/live` |
+| Runtime | Node 22 — pinned by `.nvmrc` and `engines.node` in `package.json` |
+
+`railway.json` records the start command and the health check path. Railway's config as
+code *overrides* dashboard settings, so it deliberately sets nothing in the `build`
+block: whatever build configuration already works on the service is left alone.
+
+**PostgreSQL is not part of the application container.** On Railway, add the PostgreSQL
+database to the same project and reference it from the app service's variables:
+
+```
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+```
+
+Without it there is no database, and the failure looks like this — worth knowing,
+because it is the single most common way a fresh deploy appears "broken":
+
+| Symptom | Meaning |
+|---|---|
+| `/` returns `500`, `/api/health` returns `503` with `database.configured: false` | `DATABASE_URL` was never set. Nothing is wrong with the code. |
+| `/api/health` returns `503` with `database.configured: true`, `checks.database: "schema-incomplete"` | Connected, but the tables are not there yet: `pnpm db:bootstrap` has not run and `DATABASE_SCHEMA_BOOTSTRAP` is not `auto`. |
+| `/api/health` returns `503` with `checks.database: "timeout"` | The host answered nothing within 4 s — wrong host/port, or a firewall. Note the probe is bounded, so a monitor is never left hanging. |
+| `/`, `/markets`, `/ranking`, `/markets/<id>` render the *"Predik is temporarily unavailable"* card | Working as designed. The page caught the failure and rendered real HTML instead of a bare `500` — see below. |
+| Any page returns `500` with the *"This page couldn't load"* card | An unexpected render error, caught by `app/error.tsx`. The reference number on the card (`error.digest`) matches the stack written to the deploy logs. |
+
+#### Why the unavailable card, and not an error page
+
+`app/error.tsx` and `app/global-error.tsx` exist for genuine bugs, but they are
+**client-side only**: Next.js does not render them into the server response for a failure
+raised while streaming, so a database outage used to reach the browser as a `500` with no
+visible content — the visitor saw the browser's own error page and the operator saw
+nothing to go on.
+
+The four server-rendered pages therefore catch the failure themselves, through
+`loadOrUnavailable()` in `lib/db/availability.ts`, and render `ServiceUnavailable` with a
+real explanation. The full driver error is still logged server-side with the label of the
+load that failed.
+
+Two consequences worth knowing:
+
+- Those pages answer **`200`** with the unavailable card. A user sees a working page
+  rather than a browser error, but a status-code monitor must therefore watch
+  **`/api/health`** (which answers `503` when the database is not ready), not the HTML
+  pages.
+- The visitor is never told *how* the deployment is misconfigured — `not-configured` and
+  `unreachable` produce identical copy in production, and the exact reason is printed only
+  in development.
+
+Pages that are prerendered shells (`/wallet`, `/portfolio`, `/profile`, `/referral`,
+`/login`) do not read the database at render time; they hydrate and call the API, so
+they degrade client-side instead.
+
+Every server start writes a configuration report to the deploy logs (`instrumentation.ts`
+→ `lib/config/startup.ts`) naming each area and, for anything missing, the exact variable:
+
+```
+---- Predik configuration ----
+[config] runtime    production · node v22.x
+[config] database   DATABASE_URL is not set (and no complete PGHOST/PGDATABASE pair is present) — every page that reads PostgreSQL will fail
+[config] schema     missing tables/triggers are created on first use (auto)
+[config] auth       ADMIN_PHONES is not set — this deployment has no admin account
+...
+---- 3 configuration problem(s) above ----
+```
+
+That report and the probes never print a value — only names, presence and verdicts.

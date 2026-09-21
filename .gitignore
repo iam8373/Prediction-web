@@ -22,3 +22,7 @@ tsconfig.tsbuildinfo
 # be committed, and anything under `public/` is served verbatim by a deploy.
 m4-claude.zip
 Predik-Phase*-Final.zip
+*.zip
+
+# Local working copy used while a phase was in flight. Never part of the app.
+isolate/
