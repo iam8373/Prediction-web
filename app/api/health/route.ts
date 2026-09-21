@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server'
 import { sql } from 'drizzle-orm'
 
 import { db } from '@/lib/db'
+import { ensureDatabaseSchema } from '@/lib/db/bootstrap'
 import { isDatabaseConfigured } from '@/lib/db/config'
+import { runtimeSchemaBootstrapEnabled } from '@/lib/db/security-schema'
 import { getPaymentConfig } from '@/lib/payments/config'
 
 /**
@@ -20,6 +22,10 @@ import { getPaymentConfig } from '@/lib/payments/config'
  * Liveness for a platform health check is `/api/health/live`, which ignores the
  * database on purpose so a dependency still being provisioned cannot fail a
  * deploy.
+ *
+ * `DATABASE_SCHEMA_BOOTSTRAP` is not "off" — the same idempotent step every
+ * page triggers — so a database provisioned after the first deploy becomes
+ * ready on its own, and a monitor that polls this endpoint reports the truth.
  *
  * Configuration *detail* (which environment variables are missing, why the live
  * gate is closed) is intentionally NOT returned here; operators read that from
@@ -54,6 +60,10 @@ export async function GET() {
     const probe = await withTimeout(
       (async () => {
         await db.execute(sql`select 1`)
+        // Bring the schema up before reporting readiness, so a freshly
+        // provisioned database turns healthy without waiting for a page visit.
+        // Skipped entirely when the deployment manages its own schema.
+        if (runtimeSchemaBootstrapEnabled()) await ensureDatabaseSchema()
         // A cheap existence probe: the wallet table is core to every money path.
         const result = await db.execute(sql`select to_regclass('public.wallet') as wallet`)
         const rows = result.rows as Array<{ wallet: string | null }>

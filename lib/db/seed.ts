@@ -5,7 +5,9 @@ import { eq } from 'drizzle-orm'
 import { categories as categorySeed } from '@/lib/data/categories'
 import { demoMarkets } from '@/lib/data/markets'
 import { db } from '@/lib/db'
+import { ensureDatabaseSchema } from '@/lib/db/bootstrap'
 import { categories, marketOutcomes, marketPriceHistory, markets, positions, referrals, transactions, wallets } from '@/lib/db/schema'
+import { runtimeSchemaBootstrapEnabled } from '@/lib/db/security-schema'
 
 let seedPromise: Promise<void> | null = null
 
@@ -25,7 +27,24 @@ async function ensurePersonalReferral(userId: string, createdAt = Date.now()) {
   }).onConflictDoNothing()
 }
 
-export function ensureDemoCatalog() {
+/**
+ * Guarantees a usable catalogue before any page reads it: creates the tables
+ * this application needs if they are missing, then seeds the demo catalogue
+ * once.
+ *
+ * The table creation belongs here because every database-backed page goes
+ * through this function before its first query, so a deployment that starts
+ * against an empty database becomes usable on first request instead of serving
+ * "table does not exist" errors until somebody remembers to run
+ * `pnpm db:bootstrap`. The schema step is idempotent and memoized per process;
+ * `DATABASE_SCHEMA_BOOTSTRAP=off` skips it entirely (for a runtime role with no
+ * DDL rights), and then this only seeds.
+ *
+ * The seeding itself is memoized, and a failed attempt is forgotten so the next
+ * request retries rather than caching the failure forever.
+ */
+export async function ensureDemoCatalog() {
+  if (runtimeSchemaBootstrapEnabled()) await ensureDatabaseSchema()
   seedPromise ??= seedIfEmpty().catch((error) => {
     seedPromise = null
     throw error

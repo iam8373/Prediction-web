@@ -362,13 +362,22 @@ pnpm build       # next build
 
 #### Database bootstrap
 
-`pnpm db:bootstrap` creates every table the application queries — the core
-catalogue/wallet/auth tables **and** the Phase 9 payment tables — from
-`lib/db/schema.ts`. The DDL is derived from Drizzle's own table metadata, so it
-cannot drift from the schema, and it only ever issues `create table if not
-exists` / `create index if not exists`: safe to re-run, never drops or rewrites
-data. Requires DDL rights on the database (the same requirement the runtime
-`ensurePaymentSchema()` already imposes).
+The application creates every table it queries — the core catalogue/wallet/auth
+tables, the payment tables **and** the security objects — from its own schema
+definitions. The core DDL is derived from Drizzle's table metadata, so it cannot
+drift from the schema, and it only ever issues `create table if not exists` /
+`create index if not exists`: safe to re-run, never drops or rewrites data.
+
+There are two ways to run it, and they do the same work:
+
+- **Automatically** (default, `DATABASE_SCHEMA_BOOTSTRAP=auto`): the step runs
+  the first time anything needs the catalogue — the first database-backed page or
+  a `/api/health` probe — so a brand-new database needs no manual step. It is
+  memoized per process, so it happens once per running server.
+- **Explicitly**: `pnpm db:bootstrap` runs the whole thing once, which is the
+  right choice when the runtime role has no DDL rights. Run it as the schema
+  owner and set `DATABASE_SCHEMA_BOOTSTRAP=off`; the application then never issues
+  DDL and a missing table is reported instead of created.
 
 #### PostgreSQL E2E suite (`pnpm test:db`)
 
@@ -618,9 +627,11 @@ Three things worth knowing before deploying:
 
 ### Production requirements before go-live
 
-1. `pnpm db:bootstrap` (or `DATABASE_SCHEMA_BOOTSTRAP=auto`) — creates the core,
-   payment and security objects, including the immutability triggers. On a role
-   without DDL rights, run it once as the schema owner and set
+1. `DATABASE_SCHEMA_BOOTSTRAP=auto` (the default) — the core catalogue, wallet,
+   trading, payment and security objects (including the immutability triggers) are
+   created by the same idempotent step from the first database-backed page and from
+   `/api/health`. `pnpm db:bootstrap` runs that step explicitly instead. On a role
+   without DDL rights, run `pnpm db:bootstrap` once as the schema owner and set
    `DATABASE_SCHEMA_BOOTSTRAP=off`.
 2. Set `ADMIN_PHONES`. Without it a production deployment has **no admins**.
 3. Set `OTP_FIXED_CODE` (or wire a real OTP provider). Without it **sign-in is
@@ -660,7 +671,7 @@ because it is the single most common way a fresh deploy appears "broken":
 | Symptom | Meaning |
 |---|---|
 | `/` returns `500`, `/api/health` returns `503` with `database.configured: false` | `DATABASE_URL` was never set. Nothing is wrong with the code. |
-| `/api/health` returns `503` with `database.configured: true`, `checks.database: "schema-incomplete"` | Connected, but the tables are not there yet: `pnpm db:bootstrap` has not run and `DATABASE_SCHEMA_BOOTSTRAP` is not `auto`. |
+| `/api/health` returns `503` with `database.configured: true`, `checks.database: "schema-incomplete"` | Connected, but the tables are still missing: `DATABASE_SCHEMA_BOOTSTRAP` is `off` (or the bootstrap step failed — see the deploy logs), so nothing has created them. |
 | `/api/health` returns `503` with `checks.database: "timeout"` | The host answered nothing within 4 s — wrong host/port, or a firewall. Note the probe is bounded, so a monitor is never left hanging. |
 | `/`, `/markets`, `/ranking`, `/markets/<id>` render the *"Predik is temporarily unavailable"* card | Working as designed. The page caught the failure and rendered real HTML instead of a bare `500` — see below. |
 | Any page returns `500` with the *"This page couldn't load"* card | An unexpected render error, caught by `app/error.tsx`. The reference number on the card (`error.digest`) matches the stack written to the deploy logs. |
