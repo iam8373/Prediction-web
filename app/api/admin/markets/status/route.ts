@@ -6,7 +6,7 @@ import { AUDIT_ACTIONS, recordAudit } from '@/lib/audit/log'
 import { db } from '@/lib/db'
 import { markets } from '@/lib/db/schema'
 import { requireAdmin } from '@/lib/security/admin-guard'
-import { readJsonBody, securityErrorResponse } from '@/lib/security/guard'
+import { readJsonBody, routeFailureResponse } from '@/lib/security/guard'
 import { lockResource } from '@/lib/trading/transaction-guards'
 
 const schema = z.object({
@@ -47,13 +47,16 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result)
   } catch (error) {
-    const security = securityErrorResponse(error)
-    if (security) return security
-    const message = error instanceof Error ? error.message : ''
-    if (error instanceof z.ZodError) return NextResponse.json({ ok: false, error: error.issues[0]?.message ?? 'Invalid market status' }, { status: 400 })
-    if (message === 'UNKNOWN_MARKET') return NextResponse.json({ ok: false, error: 'Unknown market' }, { status: 404 })
-    if (message === 'MARKET_RESOLVED' || message === 'MARKET_CONFLICT') return NextResponse.json({ ok: false, error: 'Market has already changed. Refresh and try again.' }, { status: 409 })
-    console.error('[v0] market status update failed', error)
-    return NextResponse.json({ ok: false, error: 'The market status could not be updated' }, { status: 500 })
+    return routeFailureResponse(error, {
+      area: '[admin]',
+      operation: 'market status update failed',
+      message: 'The market status could not be updated',
+      invalidMessage: 'Invalid market status',
+      coded: {
+        UNKNOWN_MARKET: { message: 'Unknown market', status: 404 },
+        MARKET_RESOLVED: { message: 'Market has already changed. Refresh and try again.', status: 409 },
+        MARKET_CONFLICT: { message: 'Market has already changed. Refresh and try again.', status: 409 },
+      },
+    })
   }
 }

@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db'
 import { markets, watchlists } from '@/lib/db/schema'
-import { guardRequest, readJsonBody, securityErrorResponse } from '@/lib/security/guard'
+import { guardRequest, readJsonBody, routeFailureResponse } from '@/lib/security/guard'
 
 const watchlistSchema = z.object({
   marketId: z.string().trim().min(1).max(120),
@@ -57,12 +57,11 @@ export async function POST(request: Request) {
       watchlist: await listWatchlist(user.id),
     })
   } catch (error) {
-    const security = securityErrorResponse(error)
-    if (security) return security
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ ok: false, error: error.issues[0]?.message ?? 'Invalid watchlist request' }, { status: 400 })
-    }
-    console.error('[v0] watchlist update failed', error)
-    return NextResponse.json({ ok: false, error: 'Could not update your watchlist' }, { status: 500 })
+    return routeFailureResponse(error, {
+      area: '[watchlist]',
+      operation: 'update failed',
+      message: 'Could not update your watchlist',
+      invalidMessage: 'Invalid watchlist request',
+    })
   }
 }

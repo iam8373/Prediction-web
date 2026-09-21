@@ -12,7 +12,7 @@ import { otpSchema, phoneSchema } from '@/lib/validation/schemas'
 /**
  * Sign-in endpoint.
  *
- * Hardening applied here (Phase 10):
+ * What this route guarantees:
  *  - cross-site requests are refused before anything else, so a third-party page
  *    cannot drive a sign-in (login CSRF)
  *  - the phone number is validated before it is used as a rate-limit key, so

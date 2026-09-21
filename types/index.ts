@@ -194,7 +194,7 @@ export type SortKey =
   | 'probability-low'
 
 /**
- * Payment layer types (Phase 9 Step 1).
+ * Payment layer types.
  *
  * Payment state is intentionally separate from wallet state: a payment can be
  * created, pending, failed or refunded without the wallet moving at all.

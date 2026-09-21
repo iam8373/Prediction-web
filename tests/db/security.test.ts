@@ -35,10 +35,9 @@ const read = (file: string) => readFileSync(path.join(root, file), 'utf8')
 const ADMIN_API_ROUTES = filesUnder('app/api/admin').filter((file) => file.endsWith('route.ts'))
 
 /**
- * Pre-existing non-payment writers of the wallet table. Trading settlement and
- * referral payouts own their own money paths and were explicitly out of scope
- * for Phase 9, so they are listed here rather than silently tolerated.
- * Payment routes must never appear in this map.
+ * Non-payment writers of the wallet table. Trading settlement and referral
+ * payouts own their own money paths, so they are listed here rather than
+ * silently tolerated. Payment routes must never appear in this map.
  */
 const PRE_EXISTING_WALLET_WRITERS: Record<string, string> = {
   'app/api/admin/markets/resolve/route.ts': 'trading market settlement (pre-existing feature)',

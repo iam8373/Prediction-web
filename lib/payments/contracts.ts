@@ -75,7 +75,7 @@ export interface PaymentProviderCapabilities {
   /** Results arrive asynchronously through signed webhooks rather than in the call response. */
   asyncSettlement: boolean
   cancelWithdrawal: boolean
-  /** Partial reversals. Not used in Step 1 — the data model only supports full refunds. */
+  /** Partial reversals. Unused: the data model only supports full refunds. */
   partialRefunds: boolean
   /** Provider can list its own records, enabling MISSING_INTERNAL_RECORD detection. */
   listPayments: boolean

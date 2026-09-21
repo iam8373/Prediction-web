@@ -5,7 +5,8 @@ import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 
 /**
- * Phase 9 payment tables.
+ * Payment tables (deposits, withdrawals, refunds, webhook deliveries and
+ * reconciliation evidence).
  *
  * This project has no migration runner (the catalogue tables are created and
  * seeded on demand), so the payment tables follow the same pattern: idempotent
@@ -80,8 +81,9 @@ const STATEMENTS = [
   `create index if not exists payment_intent_parent_idx on payment_intent (parent_payment_id)`,
   `create index if not exists payment_intent_provider_order_idx on payment_intent (provider_order_ref)`,
 
-  // Step 2 additions. `create table if not exists` above already includes these
-  // columns for fresh databases; these ALTERs upgrade a Step 1 database.
+  // Columns added after the payment tables first shipped. `create table if not
+  // exists` above already declares them for a fresh database; these ALTERs bring
+  // an older one up to the same shape without dropping anything.
   `alter table if exists payment_intent add column if not exists provider_order_ref text`,
   `alter table if exists payment_intent add column if not exists provider_destination_ref text`,
   `alter table if exists payment_intent add column if not exists provider_idempotency_key text`,

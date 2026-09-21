@@ -45,13 +45,13 @@ import { lockResource } from '@/lib/trading/transaction-guards'
  * handlers never write payments directly.
  *
  * Ordering rules that keep the accounting safe:
- *  1. an intent row is committed before any provider call
- *  2. provider truth is recorded (status `verified`) before money moves
- *  3. the wallet/ledger mutation is a single database transaction guarded by a
- *     row lock, a state-transition assertion and unique references
- *  4. if step 3 fails after the provider succeeded, the payment stays in
- *     `verified` with reconciliation status `pending` — an explicit,
- *     recoverable state rather than a silent partial write
+ *  - an intent row is committed before any provider call
+ *  - provider truth is recorded (status `verified`) before money moves
+ *  - the wallet/ledger mutation is one database transaction guarded by a row
+ *    lock, a state-transition assertion and unique references
+ *  - if that mutation fails after the provider succeeded, the payment stays in
+ *    `verified` with reconciliation status `pending` — an explicit, recoverable
+ *    state rather than a silent partial write
  */
 
 export interface WalletSnapshot {
@@ -306,7 +306,7 @@ export async function createDepositPayment(input: {
   await assertPaymentEligibility({ userId: input.userId, direction: 'deposit', mode: config.effective, config })
   const provider = getPaymentProvider()
 
-  // Step 1 — commit the intent before talking to the provider. The unique
+  // Commit the intent before talking to the provider. The unique
   // (userId, requestKey) index makes a retried request return the same payment.
   const prepared = await db.transaction(async (tx) => {
     await lockResource(tx, 'payment-idempotency', input.userId, input.requestKey)
@@ -701,8 +701,8 @@ export async function createWithdrawalPayment(input: {
   await assertPaymentEligibility({ userId: input.userId, direction: 'withdrawal', mode: config.effective, config })
   const provider = getPaymentProvider()
 
-  // Step 1 — reserve the funds and commit the intent atomically. Reserving
-  // first means the same money can never be queued for payout twice.
+  // Reserve the funds and commit the intent atomically. Reserving first means
+  // the same money can never be queued for payout twice.
   const prepared = await db.transaction(async (tx) => {
     await lockResource(tx, 'payment-idempotency', input.userId, input.requestKey)
     const [existing] = await tx

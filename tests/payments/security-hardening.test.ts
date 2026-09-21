@@ -24,7 +24,7 @@ import {
 } from '@/lib/validation/schemas'
 
 /**
- * Phase 10 security suite (pure half).
+ * Security unit suite: pure decision functions that need no database.
  *
  * Everything here is a decision function or a schema: no database and no
  * network, so these run everywhere. Database-backed proofs of the same

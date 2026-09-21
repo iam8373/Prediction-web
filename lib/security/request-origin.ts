@@ -16,24 +16,22 @@ import 'server-only'
  *     same-origin navigations that omit it) are allowed, because they cannot be
  *     forged by a third-party website through a browser
  *
- * Deployment note: when the app runs embedded behind a preview/proxy host the
- * session cookie is issued `SameSite=None` so it travels cross-site. Those
- * platform-provided origins (`V0_*`, `VERCEL_*`) are therefore trusted
- * automatically, and operators can add their own with
- * `TRUSTED_ORIGINS=https://app.example.com,https://staging.example.com`.
+ * Deployment note: a production deployment serves the cookie `SameSite=None`,
+ * so it travels cross-site and the host the browser reports is a proxy host,
+ * not the one the application sees. Those proxy hosts must therefore be named
+ * explicitly in `TRUSTED_ORIGINS=https://app.example.com`, together with any
+ * additional host the deployment is reachable on. Hosts the hosting platform
+ * publishes for the running deployment are trusted automatically; nothing about
+ * this set is derived from the request.
  */
 
 /**
- * Env-derived origins the platform itself publishes for this deployment.
- * These come from the environment, never from the request, so they cannot be
- * influenced by a caller.
+ * Origins the hosting platform publishes for the running deployment. These come
+ * from the environment, never from the request, so a caller cannot influence
+ * them.
  */
 function platformOrigins(): string[] {
   return [
-    process.env.V0_RUNTIME_URL,
-    process.env.V0_DEV_APP_URL,
-    process.env.V0_BUILD_URL,
-    process.env.V0_SANDBOX_URL,
     process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined,
     process.env.VERCEL_BRANCH_URL ? `https://${process.env.VERCEL_BRANCH_URL}` : undefined,
     process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : undefined,

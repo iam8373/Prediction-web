@@ -34,7 +34,7 @@ import {
 import { SANDBOX_SECRET, configureSandboxEnv, deliverWebhook, providerOutcomeWebhook, sandboxEvent } from './sandbox.ts'
 
 /**
- * Phase 10 adversarial suite.
+ * Adversarial suite: hostile requests against the real route handlers.
  *
  * Every test here is an attack attempt against the real route handlers and a
  * real PostgreSQL database: identity tampering, money tampering, state
@@ -126,9 +126,9 @@ async function createMarket(input: { userId?: string; milliShares?: number; yesP
     slug: `${id}-slug`,
     question: `Adversarial market ${marketCounter}?`,
     headline: 'Yes vs No',
-    description: 'Created by the Phase 10 adversarial suite.',
+    description: 'Created by the adversarial suite.',
     resolutionCriteria: 'Resolved by the adversarial suite.',
-    source: 'Phase 10 adversarial suite',
+    source: 'adversarial test suite',
     categoryId: 'cat_test',
     kind: 'binary',
     status: 'open',

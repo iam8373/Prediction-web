@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { NextResponse } from 'next/server'
+import { ZodError } from 'zod'
 
 import { logSecurityEvent, SECURITY_EVENTS } from '@/lib/security/events'
 import { assertTrustedRequestOrigin, CrossOriginRequestError } from '@/lib/security/request-origin'
@@ -246,6 +247,57 @@ export function securityErrorResponse(error: unknown): NextResponse | null {
   }
 
   return null
+}
+
+export interface RouteFailure {
+  /** Short area label for the log line, e.g. `[watchlist]`. */
+  area: string
+  /** What the route was attempting, for the log line, e.g. `update failed`. */
+  operation: string
+  /** Message returned when the failure is genuinely unexpected. */
+  message: string
+  /** Message returned when input validation rejects the request. */
+  invalidMessage?: string
+  /**
+   * Coded domain errors this route raises on purpose, mapped onto a response.
+   * Keeping them here (rather than in a second catch chain) is what lets the
+   * whole catch block be one call.
+   */
+  coded?: Record<string, { message: string; status: number }>
+}
+
+/**
+ * Maps a route's caught error onto its HTTP response.
+ *
+ * Every non-money route used to repeat the same catch block and the copies
+ * drifted — some logged, some did not, and the log line was the only place the
+ * cause of an unexpected 500 survived. One helper keeps the order identical
+ * everywhere:
+ *
+ *   1. a guard rejection (rate limit, cross-site, payload, media type, JSON body)
+ *   2. input validation, which is always the client's fault
+ *   3. a coded domain error the route raised deliberately
+ *   4. an unexpected failure: logged in full server-side, answered with a
+ *      message that is safe to show a user and reveals nothing internal
+ */
+export function routeFailureResponse(error: unknown, failure: RouteFailure): NextResponse {
+  const security = securityErrorResponse(error)
+  if (security) return security
+
+  if (error instanceof ZodError) {
+    return NextResponse.json(
+      { ok: false, error: error.issues[0]?.message ?? failure.invalidMessage ?? 'That request was not valid.' },
+      { status: 400 },
+    )
+  }
+
+  if (failure.coded) {
+    const coded = failure.coded[error instanceof Error ? error.message : '']
+    if (coded) return NextResponse.json({ ok: false, error: coded.message }, { status: coded.status })
+  }
+
+  console.error(`${failure.area} ${failure.operation}`, error)
+  return NextResponse.json({ ok: false, error: failure.message }, { status: 500 })
 }
 
 /**

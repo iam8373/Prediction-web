@@ -9,7 +9,7 @@
  * sweeps the accounting invariants. It never writes, never repairs, never deletes
  * and never prints a secret value — it only reports names of unset variables.
  *
- * Result vocabulary (matching the Phase 11 launch gate):
+ * Result vocabulary:
  *   PASS    verified against this environment
  *   FAIL    the implementation or configuration does not work — do not launch
  *   BLOCKED an external dependency (provider account, credentials, live

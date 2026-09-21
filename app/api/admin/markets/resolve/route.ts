@@ -7,7 +7,7 @@ import { AUDIT_ACTIONS, recordAudit } from '@/lib/audit/log'
 import { db } from '@/lib/db'
 import { ledgerEntries, marketOutcomes, markets, notifications, positions, transactions, wallets } from '@/lib/db/schema'
 import { requireAdmin } from '@/lib/security/admin-guard'
-import { readJsonBody, securityErrorResponse } from '@/lib/security/guard'
+import { readJsonBody, routeFailureResponse } from '@/lib/security/guard'
 import { calculateFees, calculatePotentialPayout, costBasis } from '@/lib/trading/pricing'
 import { lockResource } from '@/lib/trading/transaction-guards'
 
@@ -107,14 +107,17 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result)
   } catch (error) {
-    const security = securityErrorResponse(error)
-    if (security) return security
-    const message = error instanceof Error ? error.message : ''
-    if (error instanceof z.ZodError) return NextResponse.json({ ok: false, error: error.issues[0]?.message ?? 'Invalid resolution' }, { status: 400 })
-    if (message === 'UNKNOWN_MARKET') return NextResponse.json({ ok: false, error: 'Unknown market or outcome' }, { status: 404 })
-    if (message === 'ALREADY_RESOLVED' || message === 'SETTLEMENT_CONFLICT') return NextResponse.json({ ok: false, error: 'Market has already changed. Refresh and try again.' }, { status: 409 })
-    if (message === 'ACCOUNT_NOT_READY') return NextResponse.json({ ok: false, error: 'A trader wallet is not ready, so settlement was rolled back.' }, { status: 409 })
-    console.error('[v0] market resolution failed', error)
-    return NextResponse.json({ ok: false, error: 'The market could not be resolved' }, { status: 500 })
+    return routeFailureResponse(error, {
+      area: '[admin]',
+      operation: 'market resolution failed',
+      message: 'The market could not be resolved',
+      invalidMessage: 'Invalid resolution',
+      coded: {
+        UNKNOWN_MARKET: { message: 'Unknown market or outcome', status: 404 },
+        ALREADY_RESOLVED: { message: 'Market has already changed. Refresh and try again.', status: 409 },
+        SETTLEMENT_CONFLICT: { message: 'Market has already changed. Refresh and try again.', status: 409 },
+        ACCOUNT_NOT_READY: { message: 'A trader wallet is not ready, so settlement was rolled back.', status: 409 },
+      },
+    })
   }
 }

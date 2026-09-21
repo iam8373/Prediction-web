@@ -1,4 +1,3 @@
-import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
@@ -8,7 +7,6 @@ export const metadata: Metadata = {
   title: 'Predik — Trade your predictions',
   description:
     'A prediction market for cricket, football, crypto, politics and more. Trade Yes/No outcomes with real-time probabilities, INR wallets and instant settlement.',
-  generator: 'v0.app',
   icons: {
     icon: [
       {
@@ -45,7 +43,6 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased">
         <Providers>{children}</Providers>
-        {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
   )

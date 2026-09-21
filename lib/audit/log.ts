@@ -9,10 +9,9 @@ import { auditLogs } from '@/lib/db/schema'
 /**
  * Audit trail for administrative financial actions.
  *
- * There was no audit-log architecture in Predik before Phase 9, so this writes
- * to a table in the existing database (no separate audit store). Callers pass
- * the transaction handle when the audit entry must be atomic with the change it
- * describes.
+ * Entries live in the application database rather than a separate audit store,
+ * so an entry and the change it describes can be written in one transaction.
+ * Callers pass their transaction handle whenever that atomicity matters.
  *
  * Never pass secrets (API keys, webhook secrets, signing material) into
  * `metadata` — audit rows are readable by admins.

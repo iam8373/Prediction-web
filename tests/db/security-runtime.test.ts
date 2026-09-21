@@ -20,7 +20,8 @@ import { __resetRequestCookies, __setRequestCookies } from '../stubs/next-header
 import { closePool, createTestUser, databaseUrl, rawSql, readWallet, resetDatabase } from './harness.ts'
 
 /**
- * Phase 10 runtime security suite.
+ * Runtime security suite: authorization, rate limiting and immutability against
+ * a real database.
  *
  * Everything here runs against a real PostgreSQL database and drives the real
  * modules — the exported route handlers, the admin gate, the rate limiter and
@@ -77,9 +78,9 @@ async function createMarketWithPosition(input: { userId: string; milliShares: nu
     slug: `${id}-slug`,
     question: `Security harness market ${marketCounter}?`,
     headline: 'Yes vs No',
-    description: 'Created by the Phase 10 security suite.',
+    description: 'Created by the security suite.',
     resolutionCriteria: 'Resolved by the security suite.',
-    source: 'Phase 10 test suite',
+    source: 'security test suite',
     categoryId: 'cat_test',
     kind: 'binary',
     status: 'open',
@@ -351,7 +352,7 @@ describe('Accounting history is append-only in the database itself', () => {
       type: 'deposit',
       amountPaise: 10_000,
       status: 'pending',
-      description: 'Phase 10 immutability fixture',
+      description: 'immutability fixture',
       createdAt: Date.now(),
     })
     await db.insert(ledgerEntries).values({
@@ -361,7 +362,7 @@ describe('Accounting history is append-only in the database itself', () => {
       type: 'deposit',
       amountPaise: 10_000,
       status: 'pending',
-      description: 'Phase 10 immutability fixture',
+      description: 'immutability fixture',
       createdAt: Date.now(),
     })
     return { id, ledgerId: `ledger_${id}`, userId: user.userId }

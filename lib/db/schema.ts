@@ -382,7 +382,7 @@ export const auditLogs = pgTable('audit_log', {
 }))
 
 /**
- * Phase 10 rate limiting counters.
+ * Rate limiting counters.
  *
  * Server-side abuse protection for high-risk endpoints (OTP, withdrawals,
  * deposits, trading, refunds, webhooks, admin actions). Backed by PostgreSQL so

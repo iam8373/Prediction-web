@@ -12,11 +12,10 @@ import * as schema from '@/lib/db/schema'
  * Core (non-payment) schema bootstrap.
  *
  * The catalogue/wallet/auth tables were originally provisioned outside this
- * repository, which meant a fresh database could not be built from the source
- * tree at all — only the Phase 9 payment tables had DDL (`payment-schema.ts`).
- * This module closes that gap with the same idempotent approach: `create table
- * if not exists` / `create index if not exists` statements, safe to run
- * repeatedly.
+ * repository, so a fresh database could not be built from the source tree at
+ * all. This module closes that gap with the same idempotent approach the payment
+ * and security tables already use: `create table if not exists` / `create index
+ * if not exists` statements, safe to run repeatedly.
  *
  * The DDL is DERIVED from `lib/db/schema.ts` through Drizzle's own table
  * metadata instead of being hand-copied, so it cannot drift from the schema the
@@ -128,7 +127,7 @@ let coreSchemaPromise: Promise<void> | null = null
 /**
  * Creates the core tables if they are missing. Memoized per process, and safe
  * to call concurrently. Requires DDL rights on the database — the same
- * requirement the Phase 9 payment tables already impose.
+ * requirement the payment tables already impose.
  */
 export function ensureCoreSchema(): Promise<void> {
   coreSchemaPromise ??= runStatements(schemaStatements()).catch((error) => {
@@ -139,9 +138,8 @@ export function ensureCoreSchema(): Promise<void> {
 }
 
 /**
- * Core tables + the Phase 9 payment tables + the Phase 10 security objects
- * (rate-limit counters and the accounting immutability triggers), in one
- * idempotent step.
+ * Core tables, payment tables and security objects (rate-limit counters and the
+ * accounting immutability triggers), in one idempotent step.
  */
 export async function ensureDatabaseSchema(): Promise<void> {
   await ensureCoreSchema()

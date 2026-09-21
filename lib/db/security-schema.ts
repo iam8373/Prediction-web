@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 
 /**
- * Phase 10 security DDL.
+ * Security DDL: abuse-protection counters and accounting immutability.
  *
  * Two things live here:
  *

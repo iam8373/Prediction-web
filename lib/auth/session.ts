@@ -34,11 +34,22 @@ function toSessionUser(user: typeof users.$inferSelect): SessionUser {
   }
 }
 
+/**
+ * Session cookie attributes.
+ *
+ * A production deployment is served over HTTPS, usually behind a proxy that
+ * terminates TLS on a different host than the application sees, so the cookie is
+ * `Secure` and `SameSite=None` — the only combination that survives a cross-site
+ * navigation back from a payment page. Locally there is no TLS, where `None`
+ * would be rejected by the browser and `Secure` would stop the cookie being set
+ * at all, so development stays `Lax` over plain HTTP.
+ *
+ * These depend on the deployment mode only. Nothing about the request or the
+ * proxy host may widen them — a caller that could ask for `SameSite=None` over
+ * HTTP would be asking for a cookie any site can post with.
+ */
 function cookieOptions() {
-  const crossSitePreview = Boolean(
-    process.env.V0_RUNTIME_URL || process.env.V0_DEV_APP_URL || process.env.V0_BUILD_URL || process.env.V0_SANDBOX_URL,
-  )
-  const secure = process.env.NODE_ENV === 'production' || crossSitePreview
+  const secure = process.env.NODE_ENV === 'production'
   return {
     httpOnly: true,
     secure,

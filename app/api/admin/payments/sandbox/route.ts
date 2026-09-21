@@ -17,9 +17,10 @@ import { sandboxSimulationSchema } from '@/lib/validation/schemas'
  * Sandbox-only helper: asks the simulated provider to settle or fail a payment
  * and replays the result through the *real* webhook path, signature included.
  *
- * This exists because Step 1 must be verifiable without a live PSP. It refuses
- * to run in demo or live mode (see `getSandboxProvider`) and it cannot bypass
- * webhook verification — it simply builds a correctly signed delivery.
+ * It exists so the money path can be exercised end to end without a live
+ * provider. It refuses to run in demo or live mode (see `getSandboxProvider`)
+ * and cannot bypass webhook verification — it only builds a correctly signed
+ * delivery, so the code under test is the production code.
  */
 export async function POST(request: Request) {
   const guard = await requireAdmin(request, { bucket: 'adminAction', scope: 'admin.payments.sandbox' })

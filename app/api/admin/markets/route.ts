@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server'
 import { randomUUID } from 'node:crypto'
-import { ZodError } from 'zod'
 
 import { AUDIT_ACTIONS, recordAudit } from '@/lib/audit/log'
 import { db } from '@/lib/db'
 import { marketOutcomes, marketPriceHistory, markets } from '@/lib/db/schema'
 import { requireAdmin } from '@/lib/security/admin-guard'
-import { readJsonBody, securityErrorResponse } from '@/lib/security/guard'
+import { readJsonBody, routeFailureResponse } from '@/lib/security/guard'
 import { marketFormSchema } from '@/lib/validation/schemas'
 
 function slugify(value: string) {
@@ -70,10 +69,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, marketId: id })
   } catch (error) {
-    const security = securityErrorResponse(error)
-    if (security) return security
-    if (error instanceof ZodError) return NextResponse.json({ ok: false, error: error.issues[0]?.message ?? 'Invalid market' }, { status: 400 })
-    console.error('[v0] market creation failed', error)
-    return NextResponse.json({ ok: false, error: 'The market could not be created. Try again.' }, { status: 500 })
+    return routeFailureResponse(error, {
+      area: '[admin]',
+      operation: 'market creation failed',
+      message: 'The market could not be created. Try again.',
+      invalidMessage: 'Invalid market',
+    })
   }
 }

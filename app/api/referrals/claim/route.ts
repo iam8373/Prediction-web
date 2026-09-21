@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db'
 import { ledgerEntries, notifications, referrals, transactions, wallets } from '@/lib/db/schema'
-import { guardRequest, readJsonBody, securityErrorResponse } from '@/lib/security/guard'
+import { guardRequest, readJsonBody, routeFailureResponse } from '@/lib/security/guard'
 import { lockResource } from '@/lib/trading/transaction-guards'
 
 const claimSchema = z.object({ code: z.string().trim().min(6).max(32) })
@@ -86,14 +86,16 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, rewardPaise: REWARD_PAISE })
   } catch (error) {
-    const security = securityErrorResponse(error)
-    if (security) return security
-    const message = error instanceof Error ? error.message : ''
-    if (error instanceof z.ZodError) return NextResponse.json({ ok: false, error: error.issues[0]?.message ?? 'Enter a valid invite code' }, { status: 400 })
-    if (message === 'INVITE_UNAVAILABLE') return NextResponse.json({ ok: false, error: 'That invite code is unavailable or already claimed' }, { status: 409 })
-    if (message === 'OWN_INVITE') return NextResponse.json({ ok: false, error: 'You cannot claim your own invite code' }, { status: 400 })
-    if (message === 'ACCOUNT_NOT_READY') return NextResponse.json({ ok: false, error: 'Your referral wallet is not ready yet' }, { status: 409 })
-    console.error('[v0] referral claim failed', error)
-    return NextResponse.json({ ok: false, error: 'The invite could not be claimed. Try again.' }, { status: 500 })
+    return routeFailureResponse(error, {
+      area: '[referrals]',
+      operation: 'claim failed',
+      message: 'The invite could not be claimed. Try again.',
+      invalidMessage: 'Enter a valid invite code',
+      coded: {
+        INVITE_UNAVAILABLE: { message: 'That invite code is unavailable or already claimed', status: 409 },
+        OWN_INVITE: { message: 'You cannot claim your own invite code', status: 400 },
+        ACCOUNT_NOT_READY: { message: 'Your referral wallet is not ready yet', status: 409 },
+      },
+    })
   }
 }

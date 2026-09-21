@@ -21,7 +21,7 @@ import {
 const url = databaseUrl()
 const skip = url ? false : 'DATABASE_URL is not set — the PostgreSQL E2E suite did not run'
 
-/** Payment tables added in Phase 9 that must exist after a bootstrap. */
+/** Payment tables that must exist after a bootstrap. */
 const PAYMENT_TABLES = [
   'payment_intent',
   'payment_webhook_event',

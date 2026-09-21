@@ -1,6 +1,6 @@
 /**
- * Idempotent database bootstrap: creates every table the application queries
- * (core + Phase 9 payment tables) if it is missing.
+ * Idempotent database bootstrap: creates every table, index and trigger the
+ * application needs if it is missing.
  *
  * Usage:
  *   DATABASE_URL=postgres://... pnpm db:bootstrap

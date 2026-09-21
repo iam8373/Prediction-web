@@ -187,7 +187,7 @@ export async function POST(request: Request) {
       MARKET_CONFLICT: { error: 'The market changed while placing your trade. Try again.', status: 409 },
     }
     if (errors[message]) return NextResponse.json({ ok: false, error: errors[message].error }, { status: errors[message].status })
-    console.error('[v0] buy failed', error)
+    console.error('[trading] buy failed', error)
     return NextResponse.json({ ok: false, error: 'The trade could not be completed. Try again.' }, { status: 500 })
   }
 }

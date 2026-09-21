@@ -3,9 +3,8 @@ import 'server-only'
 /**
  * PostgreSQL E2E harness.
  *
- * Phase 9 was verified with unit tests only; nothing had ever touched a real
- * database. This module gives the DB-backed suites a disposable, deterministic
- * PostgreSQL fixture built on top of the application's OWN modules
+ * This module gives the DB-backed suites a disposable, deterministic PostgreSQL
+ * fixture built on top of the application's OWN modules
  * (`@/lib/db/bootstrap`, `@/lib/db`, the payment service), so the tests exercise
  * the same SQL, constraints and transactions that production runs.
  *

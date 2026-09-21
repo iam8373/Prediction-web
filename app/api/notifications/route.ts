@@ -6,7 +6,7 @@ import { getCurrentUser } from '@/lib/auth/session'
 import { db } from '@/lib/db'
 import { notifications } from '@/lib/db/schema'
 import { getNotifications } from '@/lib/data/server-api'
-import { guardRequest, readJsonBody, securityErrorResponse } from '@/lib/security/guard'
+import { guardRequest, readJsonBody, routeFailureResponse } from '@/lib/security/guard'
 
 const readSchema = z.object({
   id: z.string().min(1).optional(),
@@ -69,12 +69,11 @@ export async function PATCH(request: Request) {
       unread: Number(unreadRows[0]?.unread ?? 0),
     })
   } catch (error) {
-    const security = securityErrorResponse(error)
-    if (security) return security
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ ok: false, error: error.issues[0]?.message ?? 'Invalid notification request' }, { status: 400 })
-    }
-    console.error('[v0] notification update failed', error)
-    return NextResponse.json({ ok: false, error: 'Could not update notifications' }, { status: 500 })
+    return routeFailureResponse(error, {
+      area: '[notifications]',
+      operation: 'update failed',
+      message: 'Could not update notifications',
+      invalidMessage: 'Invalid notification request',
+    })
   }
 }

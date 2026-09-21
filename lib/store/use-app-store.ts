@@ -200,7 +200,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...(account ?? resetAccount),
       })
     } catch (error) {
-      console.error('[v0] account hydration failed', error)
+      console.error('[store] account hydration failed', error)
       set({ hydrated: true })
     }
   },
@@ -301,7 +301,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const body = await readJson<{ payments: PaymentRecord[]; summary: PaymentModeSummary }>(response)
       set({ payments: body.payments, paymentsSummary: body.summary })
     } catch (error) {
-      console.error('[v0] payment refresh failed', error)
+      console.error('[store] payment refresh failed', error)
     }
   },
 
@@ -328,7 +328,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         adminPaymentsLoading: false,
       })
     } catch (error) {
-      console.error('[v0] admin payment fetch failed', error)
+      console.error('[store] admin payment fetch failed', error)
       set({ adminPaymentsLoading: false })
     }
   },
@@ -588,7 +588,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const body = await readJson<{ transactions: AdminTransaction[] }>(response)
       set({ adminTransactions: body.transactions, adminTransactionsLoading: false })
     } catch (error) {
-      console.error('[v0] admin transaction fetch failed', error)
+      console.error('[store] admin transaction fetch failed', error)
       set({ adminTransactionsLoading: false })
     }
   },
