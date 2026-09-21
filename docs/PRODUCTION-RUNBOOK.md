@@ -1,9 +1,8 @@
-# Predik — Production Runbook (Phase 11)
+# Predik — Production Runbook
 
 Everything an operator needs to deploy Predik, verify it, back it up, recover it and
 roll it back. Written against the code as it exists: no step here asks you to change
-architecture, and every command is one that was actually run while preparing this
-document (see `docs/PHASE-11-LAUNCH-REPORT.md` for the evidence).
+architecture, and every command is one that can be run against a real environment.
 
 Live money is **off by default** and can only be turned on by satisfying the
 server-side activation gate described in §8. Nothing in this runbook enables it for
@@ -48,7 +47,7 @@ production runtime:
 | `DATABASE_URL` | yes | PostgreSQL connection string. Prefer a least-privilege role (§4). |
 | `DATABASE_SCHEMA_BOOTSTRAP` | yes | `off` in production after the schema exists. |
 | `ADMIN_PHONES` | yes | Comma-separated allowlist. Unset ⇒ **there are no admins**. |
-| `OTP_FIXED_CODE` | yes* | *Or a real SMS delivery integration. Without either, production sign-in returns 503 by design rather than handing out the demo code. |
+| `OTP_FIXED_CODE` | yes* | Exactly 6 digits. *Or a real SMS delivery integration. Without either, production sign-in returns 503 by design rather than handing out the demo code, and the sign-in screen never claims a message was sent. |
 | `TRUSTED_ORIGINS` | only with a proxy | Extra origins allowed to make state-changing requests. Same-origin requests never need listing. |
 | `PAYMENTS_MODE` | yes | `demo` \| `sandbox` \| `live`. |
 | `PAYMENTS_SANDBOX_PROVIDER` | yes | `razorpay` for real test-mode runs; `simulated` only for non-money deployments. |
@@ -84,11 +83,9 @@ pnpm start            # serves the built app on $PORT, bound to 0.0.0.0
 
 - Never run `pnpm build` on a machine that cannot reach the database if your build
   performs prerendering of data-backed pages; the app reads `DATABASE_URL` at runtime.
-- In this workspace the platform runs the dev server and (optionally) a managed
-  deploy: `freebuff-deploy check` first (it reports the exact install/build commands
-  hosting will run), then deploy with `freebuff-deploy start`. Production environment
-  variables are managed separately from the workspace `.env` files
-  (`freebuff-deploy env list` / `set` / `unset`).
+- On Railway, build/start and the healthcheck path are service settings (see the
+  README). Production variables live in the service's *Variables* tab and are separate
+  from any local env file; a variable change needs a redeploy to take effect.
 - **Never** ship `PAYMENTS_MODE=live` in the same change that first deploys the
   release. Bring the deployment up, verify sandbox, then activate live (§8).
 
@@ -97,7 +94,7 @@ pnpm start            # serves the built app on $PORT, bound to 0.0.0.0
 ## 4. Production database
 
 Expected objects: 23 tables created by `pnpm db:bootstrap` (core catalogue, trading,
-wallet/ledger, Phase 9 payments, Phase 10 rate-limit counters) plus:
+wallet/ledger, payment and rate-limit tables) plus:
 
 - unique indexes that make retries and duplicate webhooks harmless
   (`payment_intent_request_idx`, `payment_intent_provider_payment_idx`,
@@ -341,8 +338,7 @@ Rules that make recovery safe, and that must not be broken under pressure:
 
 ## 11. Security configuration notes
 
-Phase 10 hardening is documented in `docs/PHASE-10-SECURITY-REPORT.md`. Points worth
-re-checking at launch:
+The security model in one place — the points worth re-checking at launch:
 
 - **CSRF**: state-changing requests are gated by a server-side origin check
   (`lib/security/request-origin.ts`) plus the session cookie. Sessions are `httpOnly`,
@@ -356,8 +352,8 @@ re-checking at launch:
   limiter fails **open** (documented trade-off: availability of the payment path over
   throttling) — the database being down is already a paging alert.
 - **CSP and headers** live in `next.config.mjs`; the documented exceptions exist for the
-  payment checkout redirect, analytics and provider-hosted pages. Verify the production
-  build still renders after any change.
+  payment checkout redirect and provider-hosted pages. Verify the production build
+  still renders after any change.
 - **Bootstrap HTTP**: serve HTTPS only in production; the app never weakens cookie
   security automatically.
 - **The pre-flight/OTP blocker**: production sign-in refuses to hand out the demo code.
