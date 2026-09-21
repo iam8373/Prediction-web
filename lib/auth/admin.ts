@@ -98,3 +98,17 @@ export function resolveOtpCode(): OtpCodeDecision {
 
   return { mode: 'demo', code: DEMO_OTP, disclose: process.env.NODE_ENV !== 'production' }
 }
+
+/**
+ * How a one-time code reaches the person signing in.
+ *
+ * `sms` means this deployment dispatched the code as a message. No SMS provider
+ * is integrated in this codebase, so nothing is dispatched today and the sign-in
+ * screen must not claim otherwise: every code issued here is a *shared* one —
+ * either shown on the development sign-in screen or held by the operator as
+ * `OTP_FIXED_CODE`. This is the single place to change once a delivery provider
+ * is wired up.
+ */
+export function otpDeliveryChannel(): 'sms' | 'shared-code' {
+  return 'shared-code'
+}

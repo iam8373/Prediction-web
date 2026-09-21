@@ -23,6 +23,7 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [demoCode, setDemoCode] = useState('')
+  const [delivery, setDelivery] = useState<'sms' | 'shared-code'>('shared-code')
 
   async function handleSendOtp() {
     const parsed = phoneSchema.safeParse(phone)
@@ -32,11 +33,24 @@ export default function LoginPage() {
     }
     setError('')
     setSubmitting(true)
-    const code = await requestOtp(phone)
+    const result = await requestOtp(phone)
     setSubmitting(false)
-    setDemoCode(code)
+
+    // No code was issued, so stay on the phone step and show the server's
+    // reason. Moving on would let the visitor type codes that cannot work.
+    if (!result.ok) {
+      setError(result.error ?? 'We could not send a code. Try again.')
+      return
+    }
+
+    setDemoCode(result.demoCode ?? '')
+    setDelivery(result.delivery ?? 'shared-code')
     setStep('otp')
-    toast({ title: 'Code sent', description: `Demo OTP: ${code}`, tone: 'info' })
+    toast(
+      result.demoCode
+        ? { title: 'Demo code ready', description: `Use ${result.demoCode} to sign in`, tone: 'info' }
+        : { title: 'Enter your code', description: 'Type the 6 digit code to continue', tone: 'info' },
+    )
   }
 
   async function handleVerify() {
@@ -89,20 +103,19 @@ export default function LoginPage() {
             </div>
             <Button className="h-11 w-full rounded-xl" disabled={submitting} onClick={handleSendOtp}>
               {submitting ? <Loader2 className="size-4 animate-spin" /> : null}
-              Send OTP
+              Continue
             </Button>
-            <p className="text-center text-[11px] text-muted-foreground">
-              Try demo number 9876543210 to explore a pre-loaded account.
-            </p>
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="flex items-center gap-2 rounded-xl bg-accent px-3 py-2 text-xs font-medium text-accent-foreground">
-              <ShieldCheck className="size-4" /> Demo code: {demoCode}
-            </div>
+            {demoCode ? (
+              <div className="flex items-center gap-2 rounded-xl bg-accent px-3 py-2 text-xs font-medium text-accent-foreground">
+                <ShieldCheck className="size-4" /> Demo code: {demoCode}
+              </div>
+            ) : null}
             <div>
               <label htmlFor="otp" className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                6 digit code sent to +91 {phone}
+                {delivery === 'sms' ? `6 digit code sent to +91 ${phone}` : 'Enter your 6 digit code'}
               </label>
               <input
                 id="otp"

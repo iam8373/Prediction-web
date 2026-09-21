@@ -25,10 +25,11 @@ export function ServiceUnavailable({ reason }: { reason: UnavailableReason }) {
 
         <h1 className="mt-4 text-lg font-bold text-foreground">Predik is temporarily unavailable</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Market data can&apos;t be loaded right now. Nothing has been lost — your wallet balance,
-          positions and payments are unchanged, and no trade was affected.
+          Market data can&apos;t be loaded right now, so there is nothing to show on this page.
         </p>
-        <p className="mt-2 text-sm text-muted-foreground">Please try again in a moment.</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Reloading won&apos;t help until the service is restored — check the system status page for the current state.
+        </p>
 
         {process.env.NODE_ENV !== 'production' && (
           <p className="mt-3 rounded-lg bg-muted px-3 py-2 font-mono text-[11px] break-words text-muted-foreground">
@@ -40,16 +41,16 @@ export function ServiceUnavailable({ reason }: { reason: UnavailableReason }) {
 
         <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
           <Link
-            href="/"
+            href="/api/health"
             className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
           >
-            Reload
+            System status
           </Link>
           <Link
-            href="/api/health"
+            href="/"
             className="inline-flex items-center justify-center rounded-xl border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
           >
-            System status
+            Go to home
           </Link>
         </div>
       </Card>

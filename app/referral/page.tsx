@@ -55,7 +55,11 @@ export default function ReferralPage() {
       return
     }
     setInviteCode('')
-    toast({ title: 'Welcome bonus added', description: '₹50 bonus balance was added to your account.', tone: 'success' })
+    toast({
+      title: 'Welcome bonus credited',
+      description: '₹50 was added to your bonus credit. It is a reward and cannot be staked on a trade.',
+      tone: 'success',
+    })
   }
 
   return (
@@ -66,7 +70,9 @@ export default function ReferralPage() {
           <h1 className="text-lg font-bold text-foreground">Refer &amp; earn</h1>
         </div>
         <Card className="p-5 text-center">
-          <p className="text-sm text-muted-foreground">Share your code. Both of you get ₹50 in bonus balance.</p>
+          <p className="text-sm text-muted-foreground">
+            Share your code. Both of you get ₹50 of bonus credit — a reward, separate from the balance you trade with.
+          </p>
           <div className="mx-auto mt-4 flex max-w-xs items-center justify-between gap-2 rounded-xl border border-dashed border-border px-4 py-3">
             <span className="text-lg font-bold tracking-wide text-foreground">{code}</span>
             <Button size="icon-sm" variant="ghost" onClick={() => void copy()} aria-label="Copy referral link">
@@ -78,7 +84,9 @@ export default function ReferralPage() {
 
         <Card className="p-4">
           <p className="text-sm font-semibold text-foreground">Have an invite code?</p>
-          <p className="mt-1 text-xs text-muted-foreground">Claim your ₹50 welcome bonus once.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Claim your ₹50 welcome bonus credit once. It is a reward and is not spendable on trades.
+          </p>
           <div className="mt-3 flex gap-2">
             <input
               value={inviteCode}

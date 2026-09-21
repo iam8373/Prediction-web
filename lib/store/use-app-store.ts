@@ -39,6 +39,20 @@ export interface ActionResult {
   reviewRequired?: boolean
 }
 
+/**
+ * Outcome of asking the server for a sign-in code.
+ *
+ * `demoCode` is present only when the server deliberately disclosed the code,
+ * and `delivery` says how the code reached the user ('shared-code' when nothing
+ * was dispatched as a message). The screen must never assume either.
+ */
+export interface OtpRequestResult {
+  ok: boolean
+  error?: string
+  demoCode?: string
+  delivery?: 'sms' | 'shared-code'
+}
+
 interface AccountPayload {
   user: SessionUser
   wallet: Wallet
@@ -81,7 +95,7 @@ interface AppState {
   adminPaymentsLoading: boolean
 
   hydrate: () => Promise<void>
-  requestOtp: (phone: string) => Promise<string>
+  requestOtp: (phone: string) => Promise<OtpRequestResult>
   signIn: (phone: string, otp: string) => Promise<ActionResult>
   signOut: () => Promise<void>
   deposit: (amountPaise: number, method?: 'upi' | 'netbanking' | 'demo') => Promise<ActionResult>
@@ -192,15 +206,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   async requestOtp(phone) {
-    const response = await fetch('/api/auth/otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'request', phone }),
-    })
-    const body = await readJson<{ demoCode?: string }>(response)
-    const code = body.demoCode ?? '424242'
-    set({ pendingOtp: code })
-    return code
+    try {
+      const response = await fetch('/api/auth/otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'request', phone }),
+      })
+      const body = (await response.json().catch(() => ({}))) as OtpRequestResult
+
+      // A rejected request means no code was issued — a rate limit, or a
+      // deployment with no sign-in delivery configured. Report it instead of
+      // pretending the code was sent.
+      if (!response.ok) {
+        return { ok: false, error: body.error ?? 'We could not send a sign-in code. Try again.' }
+      }
+
+      // Only ever surface a code the server actually disclosed. Inventing a
+      // fallback would look like a successful send and then fail to sign in.
+      set({ pendingOtp: body.demoCode ?? null })
+      return { ok: true, demoCode: body.demoCode, delivery: body.delivery ?? 'shared-code' }
+    } catch {
+      return { ok: false, error: 'We could not reach Predik. Check your connection and try again.' }
+    }
   },
 
   async signIn(phone, otp) {

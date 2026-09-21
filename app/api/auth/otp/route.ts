@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { ZodError } from 'zod'
 
+import { otpDeliveryChannel } from '@/lib/auth/admin'
 import { createSession, getSessionCookieOptions, requestOtp, verifyOtp } from '@/lib/auth/session'
 import { anonymisedClientRef, logSecurityEvent, SECURITY_EVENTS } from '@/lib/security/events'
 import { assertJsonRequestBody, readJsonBody, securityErrorResponse } from '@/lib/security/guard'
@@ -35,7 +36,10 @@ export async function POST(request: Request) {
 
       const result = await requestOtp(phone)
       // Same response for a new and an existing account: no enumeration signal.
-      return NextResponse.json({ ok: true, demoCode: result.demoCode })
+      // `delivery` tells the sign-in screen how to word itself — it must not say
+      // a message was sent when this deployment sends none — and `demoCode` is
+      // present only when the server deliberately disclosed the code.
+      return NextResponse.json({ ok: true, delivery: otpDeliveryChannel(), demoCode: result.demoCode })
     }
 
     if (body.action === 'verify') {

@@ -1,6 +1,6 @@
 'use client'
 
-import { Bell, Plus, Search } from 'lucide-react'
+import { Bell, Plus, Search, User } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -104,13 +104,23 @@ export function TopBar() {
               ) : null}
             </Link>
 
-            <Link
-              href="/profile"
-              aria-label="Your account"
-              className="grid size-9 place-items-center rounded-full bg-accent text-sm font-bold text-accent-foreground"
-            >
-              {user ? user.name.slice(-2) : 'PD'}
-            </Link>
+            {user ? (
+              <Link
+                href="/profile"
+                aria-label="Your account"
+                className="grid size-9 place-items-center rounded-full bg-accent text-sm font-bold text-accent-foreground"
+              >
+                {user.name.slice(-2)}
+              </Link>
+            ) : (
+              <Link
+                href="/login"
+                aria-label="Sign in"
+                className="grid size-9 place-items-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <User className="size-[18px]" />
+              </Link>
+            )}
           </div>
         </div>
       </header>

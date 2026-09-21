@@ -67,8 +67,12 @@ export default function WalletPage() {
               <p className="font-semibold">{formatINR(wallet.lockedPaise)}</p>
             </div>
             <div>
-              <p className="text-muted-foreground">Bonus balance</p>
+              <p className="text-muted-foreground">Bonus credit</p>
               <p className="font-semibold">{formatINR(wallet.bonusPaise)}</p>
+              {/* Stated explicitly because the credit is a reward, not spendable funds. */}
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Rewards only — it cannot be staked on a trade or withdrawn.
+              </p>
             </div>
           </div>
         </Card>
