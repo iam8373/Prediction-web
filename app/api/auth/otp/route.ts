@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { ZodError } from 'zod'
 
 import { otpDeliveryChannel } from '@/lib/auth/admin'
+import { assertOtpVerificationAllowed, recordOtpVerificationFailure } from '@/lib/auth/otp-abuse'
 import { createSession, getSessionCookieOptions, requestOtp, verifyOtp } from '@/lib/auth/session'
 import { anonymisedClientRef, logSecurityEvent, SECURITY_EVENTS } from '@/lib/security/events'
 import { assertJsonRequestBody, readJsonBody, securityErrorResponse } from '@/lib/security/guard'
@@ -20,6 +21,9 @@ import { otpSchema, phoneSchema } from '@/lib/validation/schemas'
  *  - OTP requests are limited per IP and per phone (SMS abuse / enumeration),
  *    and verification attempts are limited per phone ACROSS challenges — the
  *    per-challenge attempt cap alone could be reset by requesting a new code
+ *  - failures are also counted across every phone number, because a
+ *    deployment-issued code is identical for all accounts and could otherwise be
+ *    guessed against a stream of fresh numbers without tripping a per-phone cap
  *  - failures are recorded as security events with an anonymised client
  *    reference, and the response never discloses whether an account exists
  */
@@ -47,6 +51,7 @@ export async function POST(request: Request) {
       const otp = otpSchema.parse(body.otp ?? '')
       await enforceRateLimit({ bucket: 'otpVerifyIp', key: `ip:${clientKey(request)}` })
       await enforceRateLimit({ bucket: 'otpVerifyPhone', key: `phone:${phone}` })
+      await assertOtpVerificationAllowed()
 
       const user = await verifyOtp(phone, otp)
       const token = await createSession(user.id)
@@ -81,6 +86,7 @@ export async function POST(request: Request) {
     }
 
     if (error instanceof Error && error.message === 'INVALID_OTP') {
+      await recordOtpVerificationFailure()
       await logSecurityEvent({
         action: SECURITY_EVENTS.otpFailed,
         entityType: 'otpChallenge',

@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { recordAudit, type AuditActorRole } from '@/lib/audit/log'
+import { clientIp } from '@/lib/security/client-ip'
 
 /**
  * Security event log.
@@ -66,11 +67,13 @@ export async function logSecurityEvent(input: SecurityEventInput): Promise<void>
  * Anonymised client reference for pre-authentication events (OTP failures,
  * floods). Keeps the first two octets of IPv4 / first two groups of IPv6 so a
  * pattern is still reviewable without storing the full address.
+ *
+ * The address comes from `clientIp` (the hop the deployment's proxy appended),
+ * so a caller cannot choose which prefix shows up in the audit trail.
  */
 export function anonymisedClientRef(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-  const ip = forwarded || request.headers.get('x-real-ip')?.trim() || ''
-  if (!ip) return 'unknown'
+  const ip = clientIp(request)
+  if (ip === 'unknown') return 'unknown'
   if (ip.includes(':')) return `${ip.split(':').slice(0, 2).join(':')}::/32`
   const parts = ip.split('.')
   if (parts.length !== 4) return 'unknown'

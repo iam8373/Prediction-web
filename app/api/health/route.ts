@@ -5,16 +5,15 @@ import { db } from '@/lib/db'
 import { ensureDatabaseSchema } from '@/lib/db/bootstrap'
 import { isDatabaseConfigured } from '@/lib/db/config'
 import { runtimeSchemaBootstrapEnabled } from '@/lib/db/security-schema'
-import { getPaymentConfig } from '@/lib/payments/config'
 
 /**
  * Production readiness probe.
  *
  * Deliberately minimal and safe to leave unauthenticated: it answers whether the
- * process is serving requests and whether PostgreSQL is reachable, and it
- * reports the payment posture as booleans so a monitor can alert on
- * `payments.mutationBlocked` without ever exposing a secret, a stack trace or a
- * connection string.
+ * process is serving requests and whether PostgreSQL is reachable, and nothing
+ * else. It used to describe the payment posture too; that is deployment
+ * configuration, so it now belongs behind authentication (`pnpm preflight` or
+ * the admin screens) rather than on an endpoint anyone can call.
  *
  *  200 — the application is up and the database answered
  *  503 — the application is up but a critical dependency is not ready
@@ -27,9 +26,9 @@ import { getPaymentConfig } from '@/lib/payments/config'
  * page triggers — so a database provisioned after the first deploy becomes
  * ready on its own, and a monitor that polls this endpoint reports the truth.
  *
- * Configuration *detail* (which environment variables are missing, why the live
- * gate is closed) is intentionally NOT returned here; operators read that from
- * the deploy logs, the authenticated admin screens or `pnpm preflight`.
+ * No configuration is returned here — not the payment mode, not the live gate,
+ * not which variables are missing. Operators read that from the deploy logs, the
+ * authenticated admin screens or `pnpm preflight`.
  */
 export const dynamic = 'force-dynamic'
 
@@ -83,7 +82,6 @@ export async function GET() {
     console.error('[health] database probe failed')
   }
 
-  const payments = getPaymentConfig()
   const ok = databaseReachable && schemaReady
 
   return NextResponse.json(
@@ -109,16 +107,6 @@ export async function GET() {
         reachable: databaseReachable,
         schemaReady,
         latencyMs: Date.now() - startedAt,
-      },
-      payments: {
-        mode: payments.effective,
-        requestedMode: payments.requested,
-        liveEnabled: payments.liveEnabled,
-        // True means this deployment refuses new monetary exposure: alert on it,
-        // it is never a normal steady state for a live deployment.
-        mutationBlocked: payments.mutationBlocked,
-        sandboxReady: payments.sandboxReady,
-        currency: payments.currency,
       },
     },
     { status: ok ? 200 : 503, headers: { 'cache-control': 'no-store' } },

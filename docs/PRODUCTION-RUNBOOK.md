@@ -133,30 +133,33 @@ with `pnpm preflight`, and keep the previous statement set ready as the rollback
 {
   "ok": true,
   "checks": { "application": "ok", "database": "ok" },
-  "database": { "reachable": true, "schemaReady": true, "latencyMs": 3 },
-  "payments": { "mode": "sandbox", "requestedMode": "sandbox", "liveEnabled": false, "mutationBlocked": false, "sandboxReady": true, "currency": "INR" }
+  "database": { "configured": true, "reachable": true, "schemaReady": true, "latencyMs": 3 }
 }
 ```
 
 - `200` — process is serving and the database answered and has the core schema.
 - `503` — the database is unreachable or the schema is incomplete. **Page someone.**
 
-It never returns connection strings, driver messages, environment values or stack
-traces; configuration detail lives behind the authenticated admin screens or
-`pnpm preflight`.
+It never returns connection strings, driver messages, environment values, stack traces
+or deployment configuration (the payment mode is not part of the response — the
+endpoint is unauthenticated). Payment posture is read from `pnpm preflight` or from the
+authenticated admin screens.
 
-Two alertable conditions exist on that endpoint:
+The one alertable condition is the status code:
 
 | Condition | Meaning |
 |---|---|
 | HTTP 503 for 2 consecutive checks | Database down / schema missing. |
-| `payments.mutationBlocked: true` on a deployment that should take money | The deployment asked for a payment mode it cannot honour and is **refusing** to move balances. Real revenue is at zero. |
+
+Payment posture needs watching too, but on a schedule rather than on this endpoint: run
+`pnpm preflight` after a deploy and after any configuration change, and treat
+`payments REFUSED` / `mutationBlocked` as a revenue outage — the deployment asked for a
+payment mode it cannot honour and is refusing to move balances.
 
 UptimeRobot is a good fit for exactly this: an HTTP(s) monitor on
-`https://<host>/api/health` accepting 200 only, a keyword/JSON check on
-`"mutationBlocked": false`, alert contacts to the on-call, and its free SSL-expiry
-monitoring on the same host. Create the monitor in the dashboard (no code change is
-needed — the endpoint already exists) and, if you want it scripted, store
+`https://<host>/api/health` accepting 200 only, alert contacts to the on-call, and its
+free SSL-expiry monitoring on the same host. Create the monitor in the dashboard (no code
+change is needed — the endpoint already exists) and, if you want it scripted, store
 `UPTIMEROBOT_API_KEY` in the environment.
 
 Application-level evidence the monitor cannot see lives in the database and the logs:
@@ -182,11 +185,12 @@ message to the client.
 | Alert | Trigger | First action |
 |---|---|---|
 | Database unavailable | `/api/health` 503 ×2 | Check the database service and connection limits; the app fails closed meanwhile. |
-| Payments refusing to move money | `payments.mutationBlocked: true` in `/api/health` | Re-run `pnpm preflight`; fix the missing prerequisite or set `PAYMENTS_MODE` to what you actually intend. |
+| Payments refusing to move money | `pnpm preflight` reports the posture as blocked, or deposits answer `503 PAYMENTS_CONFIG_DEGRADED` | Re-run `pnpm preflight`; fix the missing prerequisite or set `PAYMENTS_MODE` to what you actually intend. |
 | Webhook failures | any `payment_webhook_event` with `status='rejected'`, or a run of `failed` | Verify the webhook secret and provider event mapping; provider deliveries are retried by the provider. |
 | Reconciliation mismatch | a new `payment_reconciliation_finding` with `status <> 'matched'` | Investigate in admin → reconciliation. Never edit balances by hand. |
 | Withdrawal failure burst | payouts failing | Check the RazorpayX source account balance/limits. Holds are released on failure, never silently settled. |
 | Suspected abuse | rate-limit trips or repeated failed auth for one identifier | The limiter already throttles; escalate if it is a single account. |
+| Sign-in enumeration | `security.rate_limit.exceeded` on the shared `otpVerifyFailedGlobal` bucket | Someone is guessing a deployment-issued code across many numbers. The shared budget has already stopped it for its short window; check the clients involved and consider rotating the code. |
 | Admin authorization failures | recorded security events | Someone without privilege is probing admin routes. |
 | App crash loop | platform health/restart count | Roll back (§10) — do not debug on the live deployment. |
 
@@ -357,5 +361,16 @@ The security model in one place — the points worth re-checking at launch:
 - **Bootstrap HTTP**: serve HTTPS only in production; the app never weakens cookie
   security automatically.
 - **The pre-flight/OTP blocker**: production sign-in refuses to hand out the demo code.
-  Set `OTP_FIXED_CODE` (a deployment secret) or wire a real SMS delivery provider before
-  users need to sign in — see the launch report's remaining risks.
+  Set `OTP_FIXED_CODE` (a deployment secret, exactly 6 digits) or wire a real SMS
+  delivery provider before users need to sign in.
+- **One shared sign-in code is guessable across accounts**, which is why failures are
+  counted deployment-wide (`otpVerifyFailedGlobal`, default 50 per 5 minutes) and not
+  only per phone. The budget is shared, so an attacker can briefly stop legitimate
+  users from verifying a code — deliberate, kept to minutes, and visible as a security
+  event. Raise it with `RATE_LIMIT_OTP_VERIFY_FAILED_GLOBAL_LIMIT` if your sign-in
+  traffic is large; replace it with per-user codes as soon as a delivery provider is
+  wired up.
+- **Client addresses come from the hop the deployment's proxy appended**, never the
+  first entry of `X-Forwarded-For` (which the caller writes, and could otherwise use to
+  pick a fresh rate-limit bucket per request). Behind an extra CDN or proxy, put it in
+  front of a single trusted header rather than trusting a second appending hop.

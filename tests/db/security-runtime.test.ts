@@ -10,9 +10,9 @@ import { POST as resolveMarket } from '@/app/api/admin/markets/resolve/route'
 import { POST as buyRoute } from '@/app/api/trading/buy/route'
 import { POST as sellRoute } from '@/app/api/trading/sell/route'
 import { POST as withdrawRoute } from '@/app/api/wallet/withdraw/route'
-import { createSession } from '@/lib/auth/session'
+import { createSession, DEMO_OTP, requestOtp, verifyOtp } from '@/lib/auth/session'
 import { db } from '@/lib/db'
-import { ledgerEntries, marketOutcomes, markets, positions, sessions, trades, transactions } from '@/lib/db/schema'
+import { ledgerEntries, marketOutcomes, markets, positions, sessions, trades, transactions, users } from '@/lib/db/schema'
 import { requireAdmin } from '@/lib/security/admin-guard'
 import { guardRequest } from '@/lib/security/guard'
 import { consumeRateLimit, enforceRateLimit, RATE_LIMITS } from '@/lib/security/rate-limit'
@@ -46,6 +46,8 @@ afterEach(() => {
   __resetRequestCookies()
   delete process.env.RATE_LIMIT_ACCOUNT_READ_LIMIT
   delete process.env.RATE_LIMIT_WITHDRAWAL_LIMIT
+  delete process.env.RATE_LIMIT_OTP_VERIFY_FAILED_GLOBAL_LIMIT
+  delete process.env.ADMIN_PHONES
 })
 
 const API = 'https://app.predik.test'
@@ -215,6 +217,58 @@ describe('Admin authorization is enforced from the database, not the client', ()
     await signIn(admin.userId)
     const allowed = await resolveMarket(jsonRequest('/api/admin/markets/resolve', { marketId: 'x', outcomeId: 'x:yes' }))
     assert.equal(allowed.status, 404, 'the admin gets past authorization and fails on the unknown market instead')
+  })
+})
+
+describe('Sign-in guessing is bounded across every account, not just one phone', () => {
+  test('failed verifications on different numbers spend one shared budget', { skip }, async () => {
+    // A deployment-issued code is the same for everybody, so guessing it against
+    // fresh phone numbers never trips a per-phone limit. The shared budget is
+    // what makes that enumeration cost something.
+    process.env.RATE_LIMIT_OTP_VERIFY_FAILED_GLOBAL_LIMIT = '3'
+    const { POST: otpRoute } = await import('@/app/api/auth/otp/route')
+    const attempt = (phone: string) =>
+      otpRoute(jsonRequest('/api/auth/otp', { action: 'verify', phone, otp: '000000' }, { origin: API }))
+
+    for (const [index, phone] of ['9876501001', '9876501002', '9876501003'].entries()) {
+      const response = await attempt(phone)
+      assert.equal(response.status, 400, `attempt ${index + 1} on a fresh number is a wrong-code rejection`)
+    }
+
+    const blocked = await attempt('9876501004')
+    assert.equal(blocked.status, 429, 'the shared budget must block further verification')
+    assert.ok(blocked.headers.get('retry-after'), 'a caller is told when to try again')
+
+    // The block is a budget, not a ban: it expires with its window.
+    delete process.env.RATE_LIMIT_OTP_VERIFY_FAILED_GLOBAL_LIMIT
+    assert.equal((await attempt('9876501005')).status, 400, 'raising the limit lifts the block')
+  })
+})
+
+describe('Admin privilege follows configuration on every sign-in', () => {
+  test('a number removed from the allowlist loses admin at its next sign-in', { skip }, async () => {
+    const phone = '9876502001'
+    await requestOtp(phone)
+    const trader = await verifyOtp(phone, DEMO_OTP)
+    assert.equal(trader.isAdmin, false, 'a number that is not configured is not an admin')
+
+    // An operator grants it (or it was configured when the account was created).
+    await db.update(users).set({ isAdmin: true }).where(eq(users.id, trader.id))
+    const [promoted] = await db.select({ isAdmin: users.isAdmin }).from(users).where(eq(users.id, trader.id))
+    assert.equal(promoted.isAdmin, true)
+
+    // Taking the number off the allowlist must take effect without an operator
+    // having to remember this account: the next sign-in demotes it.
+    await requestOtp(phone)
+    const demoted = await verifyOtp(phone, DEMO_OTP)
+    assert.equal(demoted.isAdmin, false, 'privilege must not survive removal from the allowlist')
+
+    // And putting it back on grants it again — the allowlist is authoritative in
+    // both directions.
+    process.env.ADMIN_PHONES = phone
+    await requestOtp(phone)
+    const regranted = await verifyOtp(phone, DEMO_OTP)
+    assert.equal(regranted.isAdmin, true)
   })
 })
 

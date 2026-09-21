@@ -275,7 +275,6 @@ describe('Launch gate: health endpoint', () => {
     assert.equal((body.checks as Record<string, string>).database, 'ok')
     assert.equal((body.database as Record<string, unknown>).reachable, true)
     assert.equal((body.database as Record<string, unknown>).schemaReady, true)
-    assert.equal(typeof (body.payments as Record<string, unknown>).mutationBlocked, 'boolean')
 
     // A health endpoint must never become an information-disclosure endpoint.
     const serialized = JSON.stringify(body)
@@ -284,7 +283,11 @@ describe('Launch gate: health endpoint', () => {
     }
   })
 
-  test('reports payments as blocked when the production posture refuses them', { skip }, async () => {
+  test('says nothing about the payment posture to an unauthenticated caller', { skip }, async () => {
+    // The endpoint is public, so describing the payment mode — or whether the
+    // deployment is refusing to move money — hands deployment configuration to
+    // anyone who asks. Operators read that from `pnpm preflight` or the admin
+    // screens, which require a session.
     setNodeEnv('production')
     process.env.PAYMENTS_MODE = 'live'
     delete process.env.PAYMENTS_LIVE_ACTIVATION
@@ -292,14 +295,16 @@ describe('Launch gate: health endpoint', () => {
 
     const { GET } = await import('@/app/api/health/route')
     const response = await GET()
-    const body = (await response.json()) as { payments: { mutationBlocked: boolean; liveEnabled: boolean; mode: string } }
+    const body = (await response.json()) as Record<string, unknown>
 
-    // The probe stays 200 (the process and database are healthy) while telling a
-    // monitor that no money can move — which is what should page an operator.
-    assert.equal(response.status, 200)
-    assert.equal(body.payments.mutationBlocked, true)
-    assert.equal(body.payments.liveEnabled, false)
+    assert.equal(response.status, 200, 'the process and database are healthy')
+    assert.equal('payments' in body, false, 'the response must not carry the payment posture')
+    assert.ok(!JSON.stringify(body).includes('live'), 'the configured payment mode must not be disclosed')
 
+    // The posture itself is still enforced and still discoverable internally.
+    assert.equal(getPaymentConfig().mutationBlocked, true)
+
+    delete process.env.PAYMENTS_MODE
     restoreNodeEnv()
   })
 })

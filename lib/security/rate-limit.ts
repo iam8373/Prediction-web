@@ -2,11 +2,12 @@ import 'server-only'
 
 import { createHash } from 'node:crypto'
 
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 
 import { db } from '@/lib/db'
 import { rateLimitCounters } from '@/lib/db/schema'
 import { ensureSecuritySchema } from '@/lib/db/security-schema'
+import { clientIp } from '@/lib/security/client-ip'
 
 /**
  * Server-side rate limiting / abuse protection.
@@ -51,6 +52,13 @@ export const RATE_LIMITS = {
   /** Verification attempts per phone number, across challenges (brute force). */
   otpVerifyPhone: { limit: 10, windowMs: 15 * MINUTE },
   otpVerifyIp: { limit: 30, windowMs: 15 * MINUTE },
+  /**
+   * Failed verifications across EVERY phone number, as a circuit breaker. A
+   * deployment-issued code is the same for everybody, so guessing it against a
+   * stream of fresh phone numbers never trips a per-phone budget. Short window
+   * on purpose: see `lib/auth/otp-abuse.ts` for the trade-off this accepts.
+   */
+  otpVerifyFailedGlobal: { limit: 50, windowMs: 5 * MINUTE },
   deposit: { limit: 20, windowMs: HOUR },
   withdrawal: { limit: 10, windowMs: HOUR },
   trade: { limit: 240, windowMs: MINUTE },
@@ -155,6 +163,38 @@ export class RateLimitExceededError extends Error {
 }
 
 /**
+ * Reads what a bucket has already counted, without spending from it.
+ *
+ * Needed where the decision and the charge are separate events: the shared
+ * sign-in failure budget is *checked* before a code is verified but only
+ * *charged* when the code turns out to be wrong, so the check cannot be the thing
+ * that fills the bucket.
+ */
+export async function peekRateLimit(input: {
+  bucket: RateLimitBucket
+  key: string
+  now?: number
+}): Promise<RateLimitDecision> {
+  await ensureSecuritySchema()
+  const policy = policyFor(input.bucket)
+  const now = input.now ?? Date.now()
+  const windowStart = Math.floor(now / policy.windowMs) * policy.windowMs
+  const [row] = await db
+    .select({ count: rateLimitCounters.count })
+    .from(rateLimitCounters)
+    .where(eq(rateLimitCounters.id, `${input.bucket}:${rateLimitKeyHash(input.key)}:${windowStart}`))
+    .limit(1)
+  const count = Number(row?.count ?? 0)
+  return {
+    allowed: count < policy.limit,
+    limit: policy.limit,
+    remaining: Math.max(0, policy.limit - count),
+    resetAt: windowStart + policy.windowMs,
+    count,
+  }
+}
+
+/**
  * Enforces a bucket, throwing `RateLimitExceededError` when the budget is spent.
  * Fails OPEN (and logs) if the counter store is unavailable — see module note.
  */
@@ -187,16 +227,14 @@ export function rateLimitPolicies() {
 
 /**
  * Coarse client identity for pre-authentication buckets (OTP, webhook floods).
- * Uses the platform's forwarding headers; a spoofed value only lets an attacker
- * throttle itself, because authenticated buckets key on the session user id.
+ *
+ * The address comes from `clientIp`, which reads the hop the deployment's own
+ * proxy appended rather than the first entry in the forwarding chain — the first
+ * entry is whatever the caller typed, so honouring it would let one client mint
+ * a fresh identity (and a fresh budget) per request.
  */
 export function clientKey(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for')
-  const ip = forwarded?.split(',')[0]?.trim()
-    || request.headers.get('x-real-ip')?.trim()
-    || request.headers.get('cf-connecting-ip')?.trim()
-    || 'unknown'
-  return ip.slice(0, 64)
+  return clientIp(request)
 }
 
 /**

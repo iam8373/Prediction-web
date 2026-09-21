@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { afterEach, describe, test } from 'node:test'
 
 import { isConfiguredAdminPhone, resolveOtpCode } from '@/lib/auth/admin'
+import { clientIp } from '@/lib/security/client-ip'
 import { anonymisedClientRef } from '@/lib/security/events'
 import {
   MAX_JSON_BODY_BYTES,
@@ -386,6 +387,44 @@ describe('rate limiting is server-side, shared and identifier-free', () => {
   })
 })
 
+describe('the client address comes from the proxy, not from the caller', () => {
+  const request = (headers: Record<string, string>) => new Request('https://app.predik.test/api/auth/otp', { headers })
+
+  test('the hop the proxy appended is used', () => {
+    assert.equal(clientIp(request({ 'x-forwarded-for': '203.0.113.77' })), '203.0.113.77')
+  })
+
+  test('a caller-supplied entry in front of it is ignored', () => {
+    // The attack: prepend a fresh address per request so every request gets its
+    // own rate-limit bucket. The proxy appends the real address after whatever
+    // the caller sent, so only the last entry describes the connection.
+    assert.equal(
+      clientIp(request({ 'x-forwarded-for': '1.2.3.4, 198.51.100.9' })),
+      '198.51.100.9',
+    )
+    assert.notEqual(clientIp(request({ 'x-forwarded-for': '1.2.3.4, 198.51.100.9' })), '1.2.3.4')
+  })
+
+  test('a chain of forged entries cannot hide the real one', () => {
+    assert.equal(
+      clientIp(request({ 'x-forwarded-for': '1.1.1.1, 2.2.2.2, 3.3.3.3, 198.51.100.9' })),
+      '198.51.100.9',
+    )
+  })
+
+  test('with no forwarding chain there is no identity to trust', () => {
+    // A header reaching the process directly was written by the caller, so it is
+    // never treated as an address.
+    assert.equal(clientIp(request({})), 'unknown')
+    assert.equal(clientIp(request({ 'x-real-ip': '1.2.3.4' })), 'unknown')
+    assert.equal(clientIp(request({ 'cf-connecting-ip': '1.2.3.4' })), 'unknown')
+  })
+
+  test('an over-long address is truncated rather than stored whole', () => {
+    assert.ok(clientIp(request({ 'x-forwarded-for': `${'9'.repeat(200)}, 198.51.100.9` })).length <= 64)
+  })
+})
+
 describe('security events keep identifying data out of the audit trail', () => {
   const request = (headers: Record<string, string>) => new Request('https://app.predik.test/api/auth/otp', { headers })
 
@@ -397,9 +436,16 @@ describe('security events keep identifying data out of the audit trail', () => {
     assert.equal(anonymisedClientRef(request({ 'x-forwarded-for': '2001:db8:1::5' })), '2001:db8::/32')
   })
 
+  test('a forged prefix cannot choose what the audit trail records', () => {
+    assert.equal(
+      anonymisedClientRef(request({ 'x-forwarded-for': '10.0.0.1, 203.0.113.77' })),
+      '203.0.0.0/16',
+    )
+  })
+
   test('a missing or malformed address is never echoed verbatim', () => {
     assert.equal(anonymisedClientRef(request({})), 'unknown')
-    assert.equal(anonymisedClientRef(request({ 'x-real-ip': 'not-an-ip' })), 'unknown')
+    assert.equal(anonymisedClientRef(request({ 'x-forwarded-for': 'not-an-ip' })), 'unknown')
   })
 })
 
@@ -428,13 +474,49 @@ describe('runtime validation rejects what TypeScript cannot', () => {
     assert.equal(depositSchema.safeParse({ amountPaise: 50_000, method: 'upi;drop table wallets' }).success, false)
   })
 
-  test('withdrawal amounts and destinations are bounded', () => {
+  test('withdrawal amounts are bounded', () => {
     assert.equal(withdrawSchema.safeParse({ amountPaise: 50_000, destination: 'trader@upi' }).success, true)
     assert.equal(withdrawSchema.safeParse({ amountPaise: Number.NaN, destination: 'trader@upi' }).success, false)
     assert.equal(withdrawSchema.safeParse({ amountPaise: 1.5, destination: 'trader@upi' }).success, false)
-    assert.equal(withdrawSchema.safeParse({ amountPaise: 50_000, destination: 'ab' }).success, false)
-    assert.equal(withdrawSchema.safeParse({ amountPaise: 50_000, destination: 'x'.repeat(65) }).success, false)
     assert.equal(withdrawSchema.safeParse({ amountPaise: 50_000 }).success, false)
+  })
+
+  test('a withdrawal destination must be a UPI ID, not free text', () => {
+    for (const destination of ['trader@upi', 'trader.name@okaxis', '9876543210@ybl', 'a-b_c@paytm']) {
+      assert.equal(
+        withdrawSchema.safeParse({ amountPaise: 50_000, destination }).success,
+        true,
+        `${destination} is a valid UPI ID`,
+      )
+    }
+    for (const destination of [
+      'ab',
+      'trader',
+      '@upi',
+      'trader@',
+      'trader@@upi',
+      'trader@u',
+      'trader@upi bank',
+      'trader @upi',
+      'trader@up/i',
+      'https://evil.example.com',
+      'trader@upi;drop table wallet',
+      `${'x'.repeat(65)}@upi`,
+      `trader@${'x'.repeat(65)}`,
+    ]) {
+      assert.equal(
+        withdrawSchema.safeParse({ amountPaise: 50_000, destination }).success,
+        false,
+        `${JSON.stringify(destination)} should be refused before a payout is queued`,
+      )
+    }
+
+    // Surrounding whitespace is normalised rather than rejected: the value that
+    // reaches the payout is the trimmed address, never the pasted one.
+    assert.equal(
+      withdrawSchema.parse({ amountPaise: 50_000, destination: '  trader@upi\n' }).destination,
+      'trader@upi',
+    )
   })
 
   test('trade and sell reject absurd quantities, prices and identifiers', () => {

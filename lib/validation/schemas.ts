@@ -80,6 +80,16 @@ export const depositSchema = z.object({
   method: z.enum(DEPOSIT_METHODS).default('demo'),
 })
 
+/**
+ * UPI virtual payment address: `name@handle`, e.g. `trader@okaxis`.
+ *
+ * Checked here rather than at the provider so a mistyped handle is refused while
+ * the user is looking at the form, instead of failing after the money has already
+ * been reserved against the withdrawal. The length bounds live in the pattern so
+ * a very long string cannot be smuggled past the shape check.
+ */
+const UPI_ID = /^[A-Za-z0-9._-]{1,64}@[A-Za-z0-9.-]{2,64}$/
+
 export const withdrawSchema = z.object({
   amountPaise: z
     .number()
@@ -89,8 +99,7 @@ export const withdrawSchema = z.object({
   destination: z
     .string()
     .trim()
-    .min(4, 'Enter the UPI ID that should receive the payout')
-    .max(64),
+    .regex(UPI_ID, 'Enter a UPI ID like name@bank'),
 })
 
 export const adminWithdrawalActionSchema = z.object({

@@ -136,13 +136,19 @@ export async function verifyOtp(phoneInput: string, otpInput: string) {
 
     const existing = await tx.select().from(users).where(eq(users.phoneNumber, phone)).limit(1)
     if (existing[0]) {
-      // Admin privilege is granted from configuration (`ADMIN_PHONES`), never
-      // from a literal phone number in source. This keeps the allowlist
-      // authoritative on every sign-in and is idempotent; privilege is never
-      // revoked here, because that is an explicit administrative action.
-      if (isConfiguredAdminPhone(phone) && !existing[0].isAdmin) {
-        const [elevated] = await tx.update(users).set({ isAdmin: true }).where(eq(users.id, existing[0].id)).returning()
-        return elevated ?? { ...existing[0], isAdmin: true }
+      // Admin privilege follows configuration (`ADMIN_PHONES`) on every sign-in:
+      // it is granted when the number is on the allowlist and REMOVED when it is
+      // no longer on it. Revoking on sign-in is what makes taking a number off
+      // the allowlist actually take effect — otherwise an operator could remove
+      // someone and leave them holding admin indefinitely.
+      const shouldBeAdmin = isConfiguredAdminPhone(phone)
+      if (existing[0].isAdmin !== shouldBeAdmin) {
+        const [updated] = await tx
+          .update(users)
+          .set({ isAdmin: shouldBeAdmin })
+          .where(eq(users.id, existing[0].id))
+          .returning()
+        return updated ?? { ...existing[0], isAdmin: shouldBeAdmin }
       }
       return existing[0]
     }
