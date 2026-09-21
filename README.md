@@ -548,7 +548,7 @@ them forever.
 * Secrets are read from the process environment only, per provider and per mode;
   they are stripped from provider error text and never returned by an API.
   `publicPaymentConfig()` exposes mode and readiness, never credentials.
-* `.gitignore` now ignores every `.env*` file; `env.example` documents the
+* `.gitignore` now ignores every `.env*` file; `.env.example` documents the
   required keys with empty values.
 * `shadcn` (a scaffolding CLI) was moved from `dependencies` to
   `devDependencies`. It was being installed into production and accounted for

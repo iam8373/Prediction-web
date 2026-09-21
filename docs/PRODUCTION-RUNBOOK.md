@@ -40,7 +40,7 @@ configuration change.
 
 ## 2. Environment variables
 
-The full annotated list is `env.example` (tracked, no values). Required for a
+The full annotated list is `.env.example` (tracked, no values). Required for a
 production runtime:
 
 | Variable | Required | Notes |
@@ -61,7 +61,7 @@ production runtime:
 Rules that the application enforces and you should not fight:
 
 - Secrets live only in the process environment / secret manager. `.gitignore` ignores
-  every `.env*` file; `env.example` documents names only.
+  every `.env*` file; `.env.example` documents names only.
 - `PAYMENTS_RAZORPAY_API_BASE` is a store/staging override. **Setting it in
   production is a FAIL** in `pnpm preflight` — it would send payments to a host of
   your choosing rather than Razorpay.
