@@ -474,6 +474,54 @@ describe('Trading concurrency is protected by the database, not by the client', 
   })
 })
 
+describe('A buy-and-sell round trip cannot create money (real routes)', () => {
+  test('buying and immediately selling back leaves the trader down, and the ledger explains it', { skip }, async () => {
+    const trader = await createTestUser({ availablePaise: 100_000 })
+    await signIn(trader.userId)
+    const { marketId, yesOutcomeId } = await createMarketWithPosition({ userId: trader.userId, milliShares: 0 })
+
+    const walletBefore = Number((await readWallet(trader.userId)).availablePaise)
+    const ledgerBefore = (await db.select().from(ledgerEntries).where(eq(ledgerEntries.userId, trader.userId)))
+      .reduce((sum, row) => sum + Number(row.amountPaise), 0)
+
+    const buyResponse = await buyRoute(
+      jsonRequest('/api/trading/buy', { marketId, outcomeId: yesOutcomeId, amountPaise: 10_000 }, { 'idempotency-key': 'pump-buy' }),
+    )
+    assert.equal(buyResponse.status, 200)
+    const bought = (await buyResponse.json()) as { milliShares: number; quote: { pricePaise: number } }
+    assert.ok(
+      bought.quote.pricePaise > 500,
+      `a buy must fill above the 500 mid, got ${bought.quote.pricePaise}`,
+    )
+
+    const sellResponse = await sellRoute(
+      jsonRequest('/api/trading/sell', { marketId, outcomeId: yesOutcomeId, milliShares: bought.milliShares }, { 'idempotency-key': 'pump-sell' }),
+    )
+    assert.equal(sellResponse.status, 200)
+    const sold = (await sellResponse.json()) as { quote: { grossValuePaise: number; pricePaise: number } }
+    assert.ok(sold.quote.pricePaise < bought.quote.pricePaise, 'a sell must fill below the price the buy paid')
+    assert.ok(
+      sold.quote.grossValuePaise < 10_000,
+      `the round trip returned ${sold.quote.grossValuePaise} for 10_000 paid`,
+    )
+
+    const walletAfter = Number((await readWallet(trader.userId)).availablePaise)
+    const ledgerAfter = (await db.select().from(ledgerEntries).where(eq(ledgerEntries.userId, trader.userId)))
+      .reduce((sum, row) => sum + Number(row.amountPaise), 0)
+
+    assert.ok(walletAfter < walletBefore, `the trader ended with ${walletAfter}, started with ${walletBefore}`)
+    assert.equal(ledgerAfter - ledgerBefore, walletAfter - walletBefore, 'the wallet moved exactly as the ledger says')
+
+    // And the position is closed, so the loss is realised rather than hidden in
+    // an open holding.
+    const held = await db.select().from(positions).where(eq(positions.userId, trader.userId))
+    for (const position of held) {
+      assert.equal(position.status, 'closed')
+      assert.equal(Number(position.milliShares), 0)
+    }
+  })
+})
+
 describe('Market resolution is idempotent under concurrency', () => {
   test('two simultaneous resolutions settle the market and pay winners exactly once', { skip }, async () => {
     const admin = await createTestUser({ isAdmin: true })

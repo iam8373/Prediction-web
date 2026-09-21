@@ -51,7 +51,9 @@ export async function POST(request: Request) {
       if (!outcome) throw new Error('OUTCOME_NOT_FOUND')
       if (!yesOutcome || !noOutcome) throw new Error('INVALID_MARKET')
 
-      const quote = quoteBuy(input.amountPaise, outcome.pricePaise)
+      // Quoted at the price this order will actually fill at (the mid plus its
+      // own slippage), and the market is moved by that same slippage below.
+      const quote = quoteBuy(input.amountPaise, outcome.pricePaise, market.liquidityPaise)
       if (quote.milliShares <= 0) throw new Error('TRADE_TOO_SMALL')
 
       const now = Date.now()
@@ -87,7 +89,7 @@ export async function POST(request: Request) {
           .update(positions)
           .set({
             milliShares: existingPosition.milliShares + quote.milliShares,
-            averagePricePaise: blendAveragePrice(existingPosition.milliShares, existingPosition.averagePricePaise, quote.milliShares, outcome.pricePaise),
+            averagePricePaise: blendAveragePrice(existingPosition.milliShares, existingPosition.averagePricePaise, quote.milliShares, quote.pricePaise),
             updatedAt: now,
           })
           .where(eq(positions.id, existingPosition.id))
@@ -100,7 +102,7 @@ export async function POST(request: Request) {
           marketId: input.marketId,
           outcomeId: input.outcomeId,
           milliShares: quote.milliShares,
-          averagePricePaise: outcome.pricePaise,
+          averagePricePaise: quote.pricePaise,
           realisedPnlPaise: 0,
           status: 'open',
           createdAt: now,
@@ -115,7 +117,7 @@ export async function POST(request: Request) {
         outcomeId: input.outcomeId,
         side: 'buy',
         milliShares: quote.milliShares,
-        pricePaise: outcome.pricePaise,
+        pricePaise: quote.pricePaise,
         amountPaise: input.amountPaise,
         createdAt: now,
       })

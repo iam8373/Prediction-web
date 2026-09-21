@@ -21,6 +21,7 @@ import { createSession } from '@/lib/auth/session'
 import { db } from '@/lib/db'
 import { ledgerEntries, marketOutcomes, markets, notifications, paymentIntents, positions, transactions } from '@/lib/db/schema'
 import { createDepositPayment } from '@/lib/payments/service'
+import { quoteBuy, quoteSell } from '@/lib/trading/pricing'
 import { __resetRequestCookies, __setRequestCookies } from '../stubs/next-headers.mjs'
 import {
   closePool,
@@ -159,7 +160,9 @@ async function createMarket(input: { userId?: string; milliShares?: number; yesP
       updatedAt: now,
     })
   }
-  return { marketId: id, yesOutcomeId: `${id}:yes`, noOutcomeId: `${id}:no`, yesPricePaise: yesPrice }
+  // The liquidity the server prices this market against, so a test can derive
+  // the expected fill with the same quote function instead of hard-coding it.
+  return { marketId: id, yesOutcomeId: `${id}:yes`, noOutcomeId: `${id}:no`, yesPricePaise: yesPrice, liquidityPaise: 500_000 }
 }
 
 /* ------------------------------------------------------------------ *
@@ -401,15 +404,16 @@ describe('Attack: money tampering', () => {
     assert.equal(response.status, 200)
     const payload = (await response.json()) as { quote: { milliShares: number; feePaise: number }; wallet: { availablePaise: number } }
 
-    // The executed size follows the server's price, not the client's fantasy:
-    // 10,000 paise at 500 paise per share (1000 milli-shares per share).
-    const expectedMilliShares = 20_000
-    assert.equal(payload.quote.milliShares, expectedMilliShares, 'the quote must be server-computed')
+    // The executed size follows the server's quote for this order — the market
+    // mid plus the order's own slippage — and not the client's fantasy.
+    const expected = quoteBuy(10_000, market.yesPricePaise, market.liquidityPaise)
+    assert.equal(payload.quote.milliShares, expected.milliShares, 'the quote must be server-computed')
+    assert.notEqual(payload.quote.milliShares, 999_999_000, 'the client-supplied size must be ignored')
     assert.equal(payload.wallet.availablePaise, 90_000, 'the balance deducted is the real one')
 
     const [stored] = await db.select().from(positions).where(eq(positions.userId, trader.userId))
-    assert.equal(Number(stored.milliShares), expectedMilliShares)
-    assert.equal(Number(stored.averagePricePaise), market.yesPricePaise)
+    assert.equal(Number(stored.milliShares), expected.milliShares)
+    assert.equal(Number(stored.averagePricePaise), expected.pricePaise, 'the cost basis is the price actually paid')
   })
 
   test('a client cannot state its own payout on a sell', { skip }, async () => {
@@ -446,8 +450,12 @@ describe('Attack: money tampering', () => {
     )
     assert.equal(response.status, 200)
     const payload = (await response.json()) as { quote: { grossValuePaise: number }; wallet: { availablePaise: number } }
-    assert.equal(payload.quote.grossValuePaise, 2_500, '5 shares × 500 paise, computed by the server')
-    assert.equal(payload.wallet.availablePaise, 2_500)
+    // 5 shares at the market mid of 500, less this order's slippage — computed by
+    // the server, never taken from the request.
+    const expected = quoteSell(5_000, market.yesPricePaise, 500, market.liquidityPaise)
+    assert.equal(payload.quote.grossValuePaise, expected.grossValuePaise, 'the payout must be server-computed')
+    assert.notEqual(payload.quote.grossValuePaise, 999_999_999, 'the client-supplied value must be ignored')
+    assert.equal(payload.wallet.availablePaise, expected.netValuePaise)
   })
 
   test('a deposit cannot be marked settled by the client', { skip }, async () => {

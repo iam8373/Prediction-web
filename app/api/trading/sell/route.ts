@@ -58,7 +58,9 @@ export async function POST(request: Request) {
         .limit(1)
       if (!position || position.milliShares < input.milliShares) throw new Error('POSITION_TOO_SMALL')
 
-      const quote = quoteSell(input.milliShares, outcome.pricePaise, position.averagePricePaise)
+      // Quoted at the price this order will actually fill at (the mid minus its
+      // own slippage) — the same function the trade panel previews with.
+      const quote = quoteSell(input.milliShares, outcome.pricePaise, position.averagePricePaise, market.liquidityPaise)
       const now = Date.now()
       const tradeId = randomUUID()
       const transactionId = randomUUID()
@@ -97,7 +99,7 @@ export async function POST(request: Request) {
         outcomeId: input.outcomeId,
         side: 'sell',
         milliShares: input.milliShares,
-        pricePaise: outcome.pricePaise,
+        pricePaise: quote.pricePaise,
         amountPaise: quote.grossValuePaise,
         createdAt: now,
       })
@@ -122,7 +124,9 @@ export async function POST(request: Request) {
         await tx.insert(ledgerEntries).values({ id: `ledger_${tradeId}_fee`, userId: user.id, reference: feeReference, type: 'fee', amountPaise: -quote.feePaise, status: 'completed', description: feeDescription, marketId: input.marketId, createdAt: now })
       }
 
-      const nextYesPricePaise = calculateNextYesPrice(yesOutcome.pricePaise, outcome.side as 'yes' | 'no', 'sell', quote.grossValuePaise, market.liquidityPaise)
+      // Moved by the slippage this sell paid, so the mid the position was sold
+      // against can never be better than the price it filled at.
+      const nextYesPricePaise = calculateNextYesPrice(yesOutcome.pricePaise, outcome.side as 'yes' | 'no', 'sell', quote.markValuePaise, market.liquidityPaise)
       const nextNoPricePaise = 1000 - nextYesPricePaise
       const [updatedYes] = await tx
         .update(marketOutcomes)

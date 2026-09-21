@@ -46,16 +46,18 @@ export function TradePanel({
   const sellMilliShares = Math.round(sellShares * 1000)
   const closed = market.status !== 'open'
 
+  // The same quote functions the buy and sell routes use, with the same market
+  // liquidity, so the preview cannot disagree with the price actually filled.
   const buyQuote = useMemo(
-    () => quoteBuy(rupeesToPaise(amountRupees || 0), outcome.pricePaise),
-    [amountRupees, outcome.pricePaise],
+    () => quoteBuy(rupeesToPaise(amountRupees || 0), outcome.pricePaise, market.liquidityPaise),
+    [amountRupees, outcome.pricePaise, market.liquidityPaise],
   )
   const sellQuote = useMemo(
     () =>
       openPosition
-        ? quoteSell(sellMilliShares, outcome.pricePaise, openPosition.averagePricePaise)
+        ? quoteSell(sellMilliShares, outcome.pricePaise, openPosition.averagePricePaise, market.liquidityPaise)
         : null,
-    [sellMilliShares, outcome.pricePaise, openPosition],
+    [sellMilliShares, outcome.pricePaise, openPosition, market.liquidityPaise],
   )
 
   const insufficientBalance = Boolean(user) && mode === 'buy' && rupeesToPaise(amountRupees) > wallet.availablePaise
@@ -188,7 +190,7 @@ export function TradePanel({
 
           <div className="grid grid-cols-2 gap-2">
             <StatTile label="Est. shares" value={formatShares(buyQuote.milliShares)} />
-            <StatTile label="Return" value={formatMultiplier(outcome.pricePaise)} />
+            <StatTile label="Your price" value={formatMultiplier(buyQuote.pricePaise)} />
             <StatTile label="Potential payout" value={formatINR(buyQuote.grossPayoutPaise)} tone="yes" />
             <StatTile
               label="Potential profit"
@@ -286,7 +288,7 @@ export function TradePanel({
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
               <StatTile label="Amount" value={formatINR(rupeesToPaise(amountRupees))} />
-              <StatTile label="Price per share" value={formatMultiplier(outcome.pricePaise)} />
+              <StatTile label="Price per share" value={formatMultiplier(buyQuote.pricePaise)} />
               <StatTile label="Shares" value={formatShares(buyQuote.milliShares)} />
               <StatTile label="Potential payout" value={formatINR(buyQuote.grossPayoutPaise)} tone="yes" />
               <StatTile
@@ -297,14 +299,15 @@ export function TradePanel({
               <StatTile label="Fee on winnings" value={formatINR(buyQuote.feePaise)} />
             </div>
             <p className="text-xs text-muted-foreground">
-              This places a demo order at the current price. Prices can move before you confirm.
+              This places a demo order at the price shown. Larger orders fill further from the
+              market price, and prices can move before you confirm.
             </p>
           </div>
         ) : (
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
               <StatTile label="Shares" value={sellShares.toString()} />
-              <StatTile label="Price per share" value={formatMultiplier(outcome.pricePaise)} />
+              <StatTile label="Price per share" value={formatMultiplier(sellQuote?.pricePaise ?? outcome.pricePaise)} />
               <StatTile label="You receive" value={formatINR(sellQuote?.netValuePaise ?? 0)} />
               <StatTile
                 label="P&L"
@@ -313,7 +316,8 @@ export function TradePanel({
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              This closes part or all of your position at the current price.
+              This closes part or all of your position at the price shown, which is below the
+              market price by this order&apos;s slippage.
             </p>
           </div>
         )}
