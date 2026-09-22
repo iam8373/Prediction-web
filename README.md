@@ -1,6 +1,6 @@
 # Predik
 
-A prediction market for cricket, football, crypto and politics. Users trade Yes/No
+A prediction market for cricket, football and politics. Users trade Yes/No
 outcomes at a live price, hold positions, and settle at ₹10 a winning share. Every
 account has an INR wallet with an append-only ledger behind it: a movement is a
 transaction row, a ledger entry and the wallet total, written in one database

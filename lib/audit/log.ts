@@ -50,6 +50,8 @@ export const AUDIT_ACTIONS = {
   marketCreated: 'market.created',
   marketStatusChanged: 'market.status.changed',
   marketResolved: 'market.resolved',
+  /** A market was withdrawn rather than decided: every open position refunded at cost. */
+  marketRetired: 'market.retired',
   /** Payment-account (eligibility/KYC/jurisdiction) state written by an admin. */
   paymentAccountChanged: 'payment.account.changed',
 } as const

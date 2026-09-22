@@ -6,7 +6,7 @@ import { Providers } from './providers'
 export const metadata: Metadata = {
   title: 'Predik — Trade your predictions',
   description:
-    'A prediction market for cricket, football, crypto, politics and more. Trade Yes/No outcomes with real-time probabilities, INR wallets and instant settlement.',
+    'A prediction market for cricket, football, politics and more. Trade Yes/No outcomes with real-time probabilities, INR wallets and instant settlement.',
   icons: {
     icon: [
       {

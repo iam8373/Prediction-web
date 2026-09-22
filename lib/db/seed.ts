@@ -6,10 +6,11 @@ import { categories as categorySeed } from '@/lib/data/categories'
 import { demoMarkets } from '@/lib/data/markets'
 import { db } from '@/lib/db'
 import { ensureDatabaseSchema } from '@/lib/db/bootstrap'
+import { retireCryptoMarkets } from '@/lib/db/retire-crypto'
 import { categories, marketOutcomes, marketPriceHistory, markets, positions, referrals, transactions, wallets } from '@/lib/db/schema'
 import { runtimeSchemaBootstrapEnabled } from '@/lib/db/security-schema'
 
-let seedPromise: Promise<void> | null = null
+let catalogPromise: Promise<void> | null = null
 
 function referralCode(userId: string) {
   const normalized = userId.replace(/[^a-z0-9]/gi, '').slice(-8).toUpperCase()
@@ -40,16 +41,26 @@ async function ensurePersonalReferral(userId: string, createdAt = Date.now()) {
  * `DATABASE_SCHEMA_BOOTSTRAP=off` skips it entirely (for a runtime role with no
  * DDL rights), and then this only seeds.
  *
- * The seeding itself is memoized, and a failed attempt is forgotten so the next
+ * The catalogue itself is memoized, and a failed attempt is forgotten so the next
  * request retries rather than caching the failure forever.
  */
 export async function ensureDemoCatalog() {
   if (runtimeSchemaBootstrapEnabled()) await ensureDatabaseSchema()
-  seedPromise ??= seedIfEmpty().catch((error) => {
-    seedPromise = null
+  catalogPromise ??= prepareCatalog().catch((error) => {
+    catalogPromise = null
     throw error
   })
-  return seedPromise
+  return catalogPromise
+}
+
+/**
+ * Everything that must happen once before the catalogue is read: withdraw any
+ * category this build no longer lists (refunding its open positions), then seed
+ * the demo catalogue into an empty database.
+ */
+async function prepareCatalog() {
+  await retireCryptoMarkets()
+  await seedIfEmpty()
 }
 
 export async function ensureUserAccount(userId: string, phone: string) {
@@ -81,21 +92,17 @@ export async function ensureUserAccount(userId: string, phone: string) {
     if (!isDemo) return
 
     await tx.insert(positions).values([
-      { id: 'pos_eth', userId, marketId: 'eth-5000-newyear', outcomeId: 'eth-5000-newyear:yes', milliShares: 64_000, averagePricePaise: 520, realisedPnlPaise: 0, status: 'open', createdAt: now - 9 * 86_400_000, updatedAt: now - 2 * 86_400_000 },
       { id: 'pos_ndt', userId, marketId: 'ndt-wdl-t20', outcomeId: 'ndt-wdl-t20:no', milliShares: 30_000, averagePricePaise: 505, realisedPnlPaise: 0, status: 'open', createdAt: now - 2 * 86_400_000, updatedAt: now - 86_400_000 },
       { id: 'pos_nifty', userId, marketId: 'nifty-26k', outcomeId: 'nifty-26k:yes', milliShares: 22_000, averagePricePaise: 402, realisedPnlPaise: 0, status: 'open', createdAt: now - 5 * 86_400_000, updatedAt: now - 3 * 86_400_000 },
       { id: 'pos_asia', userId, marketId: 'asia-cup-final-resolved', outcomeId: 'asia-cup-final-resolved:yes', milliShares: 40_000, averagePricePaise: 690, realisedPnlPaise: 116_800, status: 'settled', createdAt: now - 12 * 86_400_000, updatedAt: now - 2 * 86_400_000 },
-      { id: 'pos_btc70', userId, marketId: 'btc-70k-resolved', outcomeId: 'btc-70k-resolved:yes', milliShares: 15_000, averagePricePaise: 380, realisedPnlPaise: -57_000, status: 'settled', createdAt: now - 15 * 86_400_000, updatedAt: now - 4 * 86_400_000 },
     ]).onConflictDoNothing()
 
     const seededTransactions = [
       ['seed-deposit', 'DEP-DEMO-1', 'deposit', 500_000, 'UPI deposit'],
-      ['seed-buy-eth', 'BUY-DEMO-1', 'buy', -33_280, 'Bought 64 shares of Yes · ETH hits $5,000'],
       ['seed-buy-ndt', 'BUY-DEMO-2', 'buy', -15_150, 'Bought 30 shares of WDL · NDT vs WDL'],
       ['seed-buy-nifty', 'BUY-DEMO-3', 'buy', -8_844, 'Bought 22 shares of Yes · Nifty 50 above 26,000'],
       ['seed-payout-asia', 'PAY-DEMO-1', 'payout', 400_000, 'Settlement · IND vs SL final'],
       ['seed-fee-asia', 'FEE-DEMO-1', 'fee', -8_320, 'Platform fee on settlement'],
-      ['seed-buy-btc', 'BUY-DEMO-4', 'buy', -57_000, 'Bought 15 shares of Yes · BTC above $70,000'],
       ['seed-withdrawal', 'WDL-DEMO-1', 'withdrawal', -150_000, 'Withdrawal to UPI'],
       ['seed-bonus', 'BON-DEMO-1', 'bonus', 10_000, 'Welcome bonus'],
     ] as const
@@ -108,7 +115,7 @@ export async function ensureUserAccount(userId: string, phone: string) {
       amountPaise,
       status: type === 'withdrawal' ? 'pending' : 'completed',
       description,
-      marketId: id.includes('eth') ? 'eth-5000-newyear' : id.includes('ndt') ? 'ndt-wdl-t20' : id.includes('nifty') ? 'nifty-26k' : id.includes('asia') ? 'asia-cup-final-resolved' : id.includes('btc') ? 'btc-70k-resolved' : null,
+      marketId: id.includes('ndt') ? 'ndt-wdl-t20' : id.includes('nifty') ? 'nifty-26k' : id.includes('asia') ? 'asia-cup-final-resolved' : null,
       createdAt: now - (seededTransactions.length - index) * 36 * 3_600_000,
     }))).onConflictDoNothing()
   })

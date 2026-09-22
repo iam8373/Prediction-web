@@ -48,7 +48,7 @@ export default async function HomePage() {
         <section className="rounded-2xl bg-gradient-to-br from-primary/15 via-accent/40 to-transparent p-5">
           <p className="text-xs font-semibold tracking-wide text-primary uppercase">Predik</p>
           <h1 className="mt-1 text-xl font-bold text-foreground lg:text-2xl">
-            Trade your predictions on cricket, crypto, politics and more
+            Trade your predictions on cricket, football, politics and more
           </h1>
           <div className="mt-4 flex flex-wrap gap-5 text-sm">
             <Stat label="Platform volume" value={formatCompactINR(stats.volumePaise)} />
