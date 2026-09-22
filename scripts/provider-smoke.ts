@@ -12,14 +12,21 @@
  * headers, durations and mapped values are shown.
  *
  *   pnpm providers:smoke
- *   pnpm providers:smoke --refresh     # ignore any cached response
- *   pnpm providers:smoke --send-otp 9876543210   # actually spends an SMS credit
+ *   pnpm providers:smoke --refresh                # ignore any cached response
+ *   pnpm providers:smoke --video <id|url>         # look up one video (1 quota unit)
+ *   pnpm providers:smoke --send-otp 9876543210    # actually sends an SMS and spends a credit
+ *
+ * YouTube and AuthKey are checked for configuration only unless asked otherwise:
+ * the first costs quota, and the second costs money and sends a message to a
+ * real phone.
  *
  * Exit code is 1 only when a provider that *is* configured failed, so a
  * deployment with no provider keys is not reported as broken.
  */
+import { authKeyConfigured, authKeyMissingConfig, sendSignInCode } from '@/lib/providers/authkey-otp'
 import { cricketFixturesToDrafts, fetchCricketFixtures, cricketProviderConfigured } from '@/lib/providers/cricket'
 import { fetchFootballFixtures, footballFixturesToDrafts, footballProviderConfigured } from '@/lib/providers/football'
+import { fetchVideoMetadata, parseYouTubeVideoId, youtubeProviderConfigured } from '@/lib/providers/youtube'
 
 const refresh = process.argv.includes('--refresh')
 
@@ -83,9 +90,85 @@ async function checkFootball() {
   }
 }
 
+async function checkYouTube() {
+  const configured = youtubeProviderConfigured()
+  if (!configured) {
+    lines.push({ provider: 'youtube', configured, outcome: 'skipped', detail: 'YOUTUBE_API_KEY is not set' })
+    return
+  }
+
+  const flag = process.argv.indexOf('--video')
+  const argument = flag === -1 ? undefined : process.argv[flag + 1]
+  if (!argument) {
+    lines.push({
+      provider: 'youtube',
+      configured, outcome: 'skipped',
+      detail: 'configured; pass --video <id|url> to spend a quota unit on a real lookup',
+    })
+    return
+  }
+
+  const videoId = parseYouTubeVideoId(argument)
+  if (!videoId) {
+    lines.push({ provider: 'youtube', configured, outcome: 'failed', detail: 'that is not a YouTube video reference' })
+    return
+  }
+
+  const started = Date.now()
+  try {
+    const [video] = await fetchVideoMetadata([videoId])
+    const elapsed = Date.now() - started
+    lines.push({
+      provider: 'youtube',
+      configured,
+      outcome: 'ok',
+      detail: video
+        ? `${video.id} "${video.title}" by ${video.channelTitle} in ${elapsed}ms`
+        : `${videoId} resolved to nothing (deleted, private, or unknown) in ${elapsed}ms`,
+    })
+  } catch (error) {
+    lines.push({ provider: 'youtube', configured, outcome: 'failed', detail: fail(error) })
+  }
+}
+
+async function checkAuthKey() {
+  const configured = authKeyConfigured()
+  if (!configured) {
+    lines.push({
+      provider: 'authkey',
+      configured,
+      outcome: 'skipped',
+      detail: `missing ${authKeyMissingConfig().join(', ') || 'configuration'}`,
+    })
+    return
+  }
+
+  const flag = process.argv.indexOf('--send-otp')
+  const phone = flag === -1 ? undefined : process.argv[flag + 1]
+  if (!phone) {
+    lines.push({
+      provider: 'authkey',
+      configured, outcome: 'skipped',
+      detail: 'configured; pass --send-otp <number> to send a real code (costs a credit)',
+    })
+    return
+  }
+
+  const started = Date.now()
+  try {
+    // A code that can never be used, so a diagnostic run cannot sign anybody in.
+    const result = await sendSignInCode({ phone: phone.replace(/\D/g, '').slice(-10), code: '000000' })
+    lines.push({ provider: 'authkey', configured, outcome: 'ok', detail: `${result.message} in ${Date.now() - started}ms` })
+  } catch (error) {
+    lines.push({ provider: 'authkey', configured, outcome: 'failed', detail: fail(error) })
+  }
+}
+
 async function main() {
   await checkCricket()
   await checkFootball()
+  await checkYouTube()
+  await checkAuthKey()
 
   console.info('')
   console.info('provider smoke test')

@@ -26,6 +26,7 @@ import { publicPaymentConfig } from '@/lib/payments/config'
 import { safeCheckoutUrl } from '@/lib/security/url-safety'
 import type { PaymentDirection, PaymentStatus, ReconciliationStatus } from '@/lib/payments/state-machine'
 import { DEMO_NOW } from '@/lib/data/demo-config'
+import { syncProviderMarkets } from '@/lib/data/provider-markets'
 import { sortLabels } from '@/lib/data/market-filters'
 import type {
   AdminTransaction,
@@ -46,6 +47,24 @@ import type {
 } from '@/types'
 
 export { sortLabels }
+
+/**
+ * Makes the catalogue ready to read: the seeded demo markets, plus whatever the
+ * configured providers currently list.
+ *
+ * The provider step is optional by design. It is memoized in
+ * `syncProviderMarkets` (one refresh per ten minutes per process), it returns
+ * immediately when no provider is configured, and a failure is logged rather
+ * than thrown — a provider problem must never stop a market page rendering.
+ */
+async function ensureCatalog() {
+  await ensureDemoCatalog()
+  try {
+    await syncProviderMarkets()
+  } catch (error) {
+    console.error('[data] provider market sync failed:', error)
+  }
+}
 
 function rowToMarket(
   row: typeof markets.$inferSelect,
@@ -106,13 +125,13 @@ async function hydrateMarkets(rows: Array<typeof markets.$inferSelect>) {
 }
 
 export async function getAllMarkets() {
-  await ensureDemoCatalog()
+  await ensureCatalog()
   const rows = await db.select().from(markets)
   return hydrateMarkets(rows)
 }
 
 export async function getMarket(idOrSlug: string) {
-  await ensureDemoCatalog()
+  await ensureCatalog()
   const rows = await db.select().from(markets).where(or(eq(markets.id, idOrSlug), eq(markets.slug, idOrSlug))).limit(1)
   const result = await hydrateMarkets(rows)
   return result[0]
@@ -195,7 +214,7 @@ export async function resolvedMarkets(limit = 12) {
 }
 
 export async function platformStats() {
-  await ensureDemoCatalog()
+  await ensureCatalog()
   const [result] = await db.select({
     volumePaise: sql<number>`coalesce(sum(${markets.volumePaise}), 0)`,
     openMarkets: sql<number>`count(*) filter (where ${markets.status} = 'open')`,
@@ -242,7 +261,7 @@ export interface LeaderboardRow {
 }
 
 export async function leaderboardFromDb(limit = 10): Promise<LeaderboardRow[]> {
-  await ensureDemoCatalog()
+  await ensureCatalog()
   const [userRows, tradeRows, positionRows] = await Promise.all([
     db.select({ id: users.id, name: users.name }).from(users),
     db.select({
@@ -283,12 +302,12 @@ export async function leaderboardFromDb(limit = 10): Promise<LeaderboardRow[]> {
 }
 
 export async function getCategories() {
-  await ensureDemoCatalog()
+  await ensureCatalog()
   return db.select().from(categories)
 }
 
 export async function getCategorySummaries() {
-  await ensureDemoCatalog()
+  await ensureCatalog()
   return db
     .select({
       id: categories.id,
@@ -305,7 +324,7 @@ export async function getCategorySummaries() {
 }
 
 export async function marketStats(marketId: string) {
-  await ensureDemoCatalog()
+  await ensureCatalog()
   const [result] = await db
     .select({
       tradeCount: sql<number>`count(*)`,

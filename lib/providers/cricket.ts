@@ -105,6 +105,16 @@ export function cricketProviderConfigured(): boolean {
 }
 
 /**
+ * Forgets the cached fixture list, so the next read goes upstream.
+ *
+ * The TTL is what makes a rescheduled fixture appear within half an hour; this
+ * exists for the smoke script and the test suite, which must not wait for it.
+ */
+export function resetCricketCache(): void {
+  fixturesCache.clear()
+}
+
+/**
  * Upcoming and live matches. Throws `CricketDataError`; callers decide whether
  * that means "fall back to the demo catalogue" (it does) or "tell an operator".
  */

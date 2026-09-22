@@ -113,6 +113,14 @@ export function footballProviderConfigured(): boolean {
   return Boolean(process.env.API_FOOTBALL_KEY?.trim())
 }
 
+/**
+ * Forgets the cached fixture list, so the next read goes upstream. Mirrors
+ * `resetCricketCache`; used by the smoke script and the test suite.
+ */
+export function resetFootballCache(): void {
+  fixturesCache.clear()
+}
+
 /** Upcoming fixtures. Throws `FootballDataError`; callers fall back to demo data. */
 export async function fetchFootballFixtures(options: { refresh?: boolean } = {}): Promise<FootballFixture[]> {
   const key = process.env.API_FOOTBALL_KEY?.trim()
