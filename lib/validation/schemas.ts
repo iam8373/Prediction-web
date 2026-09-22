@@ -145,6 +145,10 @@ export const marketFormSchema = z
     resolvesAt: z.string().min(1, 'Pick a resolution date'),
     resolutionCriteria: z.string().trim().min(20, 'Explain how this resolves').max(600),
     source: z.string().trim().min(3, 'Name the source of truth').max(120),
+    // A YouTube link or video id the market page should show. The value is
+    // accepted as free text here and resolved to a video id on the server, so
+    // this module stays importable from a client component.
+    videoUrl: z.string().trim().max(200).optional(),
     initialLiquidityRupees: z
       .number()
       .int()

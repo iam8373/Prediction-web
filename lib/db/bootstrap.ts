@@ -122,6 +122,24 @@ export function schemaTableNames(): string[] {
   return schemaTables().map((table) => table.name)
 }
 
+/**
+ * Columns added to a core table after that table already existed somewhere.
+ *
+ * `create table if not exists` cannot add a column to a table that is already
+ * present, so a new column on an existing table needs an entry here as well as
+ * in `lib/db/schema.ts` — otherwise a fresh database gets it and a deployed one
+ * silently does not. Same idempotent `add column if not exists` approach the
+ * payment tables already use.
+ */
+const ADDITIVE_STATEMENTS: readonly string[] = [
+  `alter table if exists "market" add column if not exists "video_id" text`,
+]
+
+/** Exported so the bootstrap script and the schema suite can see them. */
+export function schemaAlterStatements(): readonly string[] {
+  return ADDITIVE_STATEMENTS
+}
+
 let coreSchemaPromise: Promise<void> | null = null
 
 /**
@@ -130,7 +148,7 @@ let coreSchemaPromise: Promise<void> | null = null
  * requirement the payment tables already impose.
  */
 export function ensureCoreSchema(): Promise<void> {
-  coreSchemaPromise ??= runStatements(schemaStatements()).catch((error) => {
+  coreSchemaPromise ??= runStatements([...schemaStatements(), ...ADDITIVE_STATEMENTS]).catch((error) => {
     coreSchemaPromise = null
     throw error
   })
@@ -157,7 +175,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
 export async function bootstrapDatabase(): Promise<number> {
   // Order matters: the security statements install triggers ON the accounting
   // tables, so those tables must be created first.
-  const statements = [...schemaStatements(), ...paymentSchemaStatements(), ...securitySchemaStatements()]
+  const statements = [...schemaStatements(), ...ADDITIVE_STATEMENTS, ...paymentSchemaStatements(), ...securitySchemaStatements()]
   await runStatements(statements)
   return statements.length
 }

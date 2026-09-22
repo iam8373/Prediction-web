@@ -6,6 +6,7 @@ import { db } from '@/lib/db'
 import { marketOutcomes, marketPriceHistory, markets } from '@/lib/db/schema'
 import { requireAdmin } from '@/lib/security/admin-guard'
 import { readJsonBody, routeFailureResponse } from '@/lib/security/guard'
+import { parseYouTubeVideoId } from '@/lib/providers/youtube'
 import { marketFormSchema } from '@/lib/validation/schemas'
 
 function slugify(value: string) {
@@ -22,6 +23,12 @@ export async function POST(request: Request) {
     const now = Date.now()
     const id = `market_${randomUUID()}`
     const yesPricePaise = Math.round((input.initialYesProbability / 100) * 1000)
+    // Optional: attach the video the market is about. An unusable link is
+    // refused rather than stored, because a market page would otherwise try to
+    // fetch it on every visit.
+    const submittedVideo = input.videoUrl?.trim()
+    const videoId = submittedVideo ? parseYouTubeVideoId(submittedVideo) : null
+    if (submittedVideo && !videoId) throw new Error('INVALID_VIDEO_URL')
     const baseSlug = slugify(input.question) || id
     const slug = `${baseSlug}-${id.slice(-8)}`
 
@@ -38,6 +45,7 @@ export async function POST(request: Request) {
         kind: 'binary',
         status: input.status,
         emblem: input.yesLabel.slice(0, 3).toUpperCase(),
+        videoId,
         live: false,
         featured: false,
         bonus: false,
@@ -74,6 +82,9 @@ export async function POST(request: Request) {
       operation: 'market creation failed',
       message: 'The market could not be created. Try again.',
       invalidMessage: 'Invalid market',
+      coded: {
+        INVALID_VIDEO_URL: { message: 'That YouTube link or video id could not be read.', status: 400 },
+      },
     })
   }
 }

@@ -79,6 +79,12 @@ export function redactProviderUrl(url: string): string {
   }
 }
 
+export interface ProviderFailureClassification {
+  kind: ProviderFailureKind
+  /** Human-readable, already free of credentials. */
+  detail: string
+}
+
 export interface GetJsonOptions {
   /** Adapter name, used in the error message so the logs say which provider failed. */
   provider: string
@@ -86,6 +92,13 @@ export interface GetJsonOptions {
   headers?: Record<string, string>
   /** Default 5s: long enough for a healthy provider, short enough that a page render survives one. */
   timeoutMs?: number
+  /**
+   * Lets an adapter read its provider's own machine-readable error body. Google,
+   * for example, reports both a rejected key and an exhausted daily quota as
+   * HTTP 403, so only the body distinguishes them. The interpretation stays in
+   * the adapter; this helper stays generic.
+   */
+  classifyErrorBody?: (body: unknown) => ProviderFailureClassification | null
 }
 
 /**
@@ -114,14 +127,17 @@ export async function getJson<T>(options: GetJsonOptions): Promise<T> {
     throw new ProviderRequestError({ kind, provider, url, detail: name || 'request failed' })
   }
 
-  if (response.status === 401 || response.status === 403) {
-    throw new ProviderRequestError({ kind: 'auth', provider, url, status: response.status })
-  }
-  if (response.status === 429) {
-    throw new ProviderRequestError({ kind: 'rate-limit', provider, url, status: 429 })
-  }
   if (!response.ok) {
-    throw new ProviderRequestError({ kind: 'http', provider, url, status: response.status })
+    const classification = options.classifyErrorBody
+      ? await classifyFailureBody(response, options.classifyErrorBody)
+      : null
+    throw new ProviderRequestError({
+      kind: classification?.kind ?? defaultKindForStatus(response.status),
+      provider,
+      url,
+      status: response.status,
+      detail: classification?.detail,
+    })
   }
 
   try {
@@ -140,4 +156,43 @@ export async function getJson<T>(options: GetJsonOptions): Promise<T> {
  */
 export function isProviderAuthFailure(error: unknown): boolean {
   return error instanceof ProviderRequestError && (error.kind === 'auth' || error.kind === 'rate-limit')
+}
+
+function defaultKindForStatus(status: number): ProviderFailureKind {
+  if (status === 401 || status === 403) return 'auth'
+  if (status === 429) return 'rate-limit'
+  return 'http'
+}
+
+/**
+ * Reads an error body for classification and nothing else.
+ *
+ * A provider that cannot produce JSON simply leaves the status-based kind in
+ * place. The body is never logged wholesale: several of these APIs echo the
+ * submitted key back, and an error path is exactly where that would end up in a
+ * log line.
+ */
+async function classifyFailureBody(
+  response: Response,
+  classify: (body: unknown) => ProviderFailureClassification | null,
+): Promise<ProviderFailureClassification | null> {
+  try {
+    return classify(await response.json())
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Removes any occurrence of the given secret values from text that is about to
+ * be logged. Last line of defence for a provider that echoes a credential into
+ * an error message.
+ */
+export function scrubSecrets(text: string, secrets: Array<string | undefined | null>): string {
+  let scrubbed = text
+  for (const secret of secrets) {
+    if (!secret || secret.length < 6) continue
+    scrubbed = scrubbed.split(secret).join('REDACTED')
+  }
+  return scrubbed
 }

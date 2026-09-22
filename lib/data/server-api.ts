@@ -65,6 +65,7 @@ function rowToMarket(
     status: row.status as Market['status'],
     league: row.league ?? undefined,
     emblem: row.emblem,
+    videoId: row.videoId ?? undefined,
     live: row.live,
     featured: row.featured,
     bonus: row.bonus,

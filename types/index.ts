@@ -59,6 +59,8 @@ export interface Market {
   status: MarketStatus
   league?: string
   emblem: string
+  /** YouTube video this market is about, when one is attached. Display only. */
+  videoId?: string
   live: boolean
   featured: boolean
   bonus: boolean

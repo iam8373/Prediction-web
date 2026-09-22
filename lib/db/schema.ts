@@ -63,6 +63,12 @@ export const markets = pgTable('market', {
   status: text('status').notNull(),
   league: text('league'),
   emblem: text('emblem').notNull(),
+  /**
+   * YouTube video this market is about, when it has one. Display only: the
+   * market page shows the video's metadata so a visitor can see the subject.
+   * Settlement never depends on it.
+   */
+  videoId: text('video_id'),
   live: boolean('live').notNull().default(false),
   featured: boolean('featured').notNull().default(false),
   bonus: boolean('bonus').notNull().default(false),

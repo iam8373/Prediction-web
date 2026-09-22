@@ -4,7 +4,13 @@ import { after, describe, test } from 'node:test'
 import { is } from 'drizzle-orm'
 import { getTableConfig, PgTable } from 'drizzle-orm/pg-core'
 
-import { ensureDatabaseSchema, schemaStatements, schemaTableNames } from '@/lib/db/bootstrap'
+import {
+  bootstrapDatabase,
+  ensureDatabaseSchema,
+  schemaAlterStatements,
+  schemaStatements,
+  schemaTableNames,
+} from '@/lib/db/bootstrap'
 import * as schema from '@/lib/db/schema'
 import { ensurePaymentSchema } from '@/lib/db/payment-schema'
 import {
@@ -96,6 +102,27 @@ describe('PostgreSQL schema bootstrap', () => {
       "select count(*)::text as count from information_schema.columns where table_schema = 'public'",
     ))[0]?.count
     assert.equal(columnsAfter, columnsBefore, 'a repeated bootstrap must not add or remove columns')
+  })
+
+  test('a column added to an existing table reaches a database that predates it', { skip }, async () => {
+    await resetDatabase()
+
+    // Simulate a deployment created before the column existed: the table is
+    // present and simply lacks it, which is exactly the case `create table if
+    // not exists` cannot fix on its own.
+    const target = schemaAlterStatements()[0]
+    assert.ok(target, 'at least one additive statement is declared')
+    const column = /add column if not exists "([^"]+)"/.exec(target)?.[1]
+    assert.ok(column, 'the additive statement names a column')
+
+    await rawSql('alter table "market" drop column "video_id"')
+    const dropped = await schemaDescription('market')
+    assert.ok(!dropped.some((entry) => entry.column_name === 'video_id'), 'the column is gone before the migration runs')
+
+    await bootstrapDatabase()
+
+    const restored = await schemaDescription('market')
+    assert.ok(restored.some((entry) => entry.column_name === column), 'the bootstrap adds the missing column')
   })
 
   test('initializing while empty statements exist for every table is stable', { skip }, async () => {

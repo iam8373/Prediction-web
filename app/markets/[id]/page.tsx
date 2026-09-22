@@ -6,14 +6,34 @@ import { ServiceUnavailable } from '@/components/layout/service-unavailable'
 import { PriceChart } from '@/components/charts/price-chart'
 import { loadOrUnavailable } from '@/lib/db/availability'
 import { MarketStatusHeader } from '@/components/markets/market-status-header'
+import { MarketVideo } from '@/components/markets/market-video'
 import { WatchlistButton } from '@/components/markets/watchlist-button'
 import { TradePanel } from '@/components/trading/trade-panel'
 import { Card, SectionHeading } from '@/components/ui/primitives'
 import { getMarket, marketStats, recentTradesFromDb } from '@/lib/data/server-api'
+import { fetchVideo } from '@/lib/providers/youtube'
 import { formatINR, formatShares } from '@/lib/money'
 import { priceToProbabilityBps } from '@/lib/trading/pricing'
 
 export const dynamic = 'force-dynamic'
+
+/**
+ * The video a market is about, when it has one and the provider answers.
+ *
+ * This never throws and never blocks the page on a provider: an unconfigured
+ * key, a deleted video and an outage all mean "no card". The adapter's own TTL
+ * cache (six hours) is what keeps this from being an API call per visitor — the
+ * page is dynamic, the metadata is not.
+ */
+async function loadMarketVideo(videoId?: string) {
+  if (!videoId) return null
+  try {
+    return await fetchVideo(videoId)
+  } catch (error) {
+    console.info(`[market] video metadata unavailable: ${error instanceof Error ? error.message : String(error)}`)
+    return null
+  }
+}
 
 export async function generateMetadata({
   params,
@@ -64,6 +84,7 @@ export default async function MarketDetailPage({
 
   if (!loaded.value) notFound()
   const { market, trades, stats } = loaded.value
+  const video = await loadMarketVideo(market.videoId)
 
   return (
     <AppShell>
@@ -84,6 +105,8 @@ export default async function MarketDetailPage({
             </div>
             <PriceChart history={market.priceHistory} />
           </Card>
+
+          {video ? <MarketVideo video={video} /> : null}
 
           <section>
             <SectionHeading title="About this market" />
