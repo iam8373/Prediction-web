@@ -1,14 +1,15 @@
 import 'server-only'
 
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { cookies } from 'next/headers'
 
-import { DEMO_OTP, isConfiguredAdminPhone, resolveOtpCode } from '@/lib/auth/admin'
+import { canonicalPhone, DEMO_OTP, isConfiguredAdminPhone, resolveOtpCode } from '@/lib/auth/admin'
 import { db } from '@/lib/db'
 import { otpChallenges, sessions, users } from '@/lib/db/schema'
 import { ensureDemoCatalog, ensureUserAccount } from '@/lib/db/seed'
+import { authKeyConfigured, sendSignInCode } from '@/lib/providers/authkey-otp'
 import { otpSchema, phoneSchema } from '@/lib/validation/schemas'
 import type { SessionUser } from '@/types'
 
@@ -66,9 +67,15 @@ export function getSessionCookieOptions() {
 export async function requestOtp(phoneInput: string) {
   const phone = phoneSchema.parse(phoneInput)
 
-  // Which code may this deployment issue? In production, an unconfigured
-  // deployment must refuse to sign anyone in rather than hand out a code that is
-  // identical for every account and documented in the README.
+  // The production path: a fresh code, delivered to the phone that asked for it.
+  // A code sent by SMS is unique per request, so it carries none of the risk the
+  // shared fallback code does.
+  if (authKeyConfigured()) return requestOtpBySms(phone)
+
+  // No delivery channel is configured, so this deployment can only issue a code
+  // the operator already controls. In production an unconfigured deployment must
+  // refuse to sign anyone in rather than hand out a code that is identical for
+  // every account and documented in the README.
   const decision = resolveOtpCode()
   if (decision.mode === 'unavailable' || !decision.code) throw new Error('OTP_UNAVAILABLE')
   const code = decision.code
@@ -99,6 +106,63 @@ export async function requestOtp(phoneInput: string) {
     // sign-in screen). A configured production code is never disclosed.
     demoCode: decision.disclose ? code : undefined,
   }
+}
+
+/**
+ * One-time code delivered by SMS.
+ *
+ * Order matters. The challenge is stored first and the message is sent second,
+ * so a delivered code always has something to match against. If the send fails
+ * the challenge is immediately consumed, which means a code that never arrived
+ * cannot be sitting in the table waiting to be guessed.
+ *
+ * The code itself is never logged, never returned to the caller and never
+ * written anywhere except as a hash.
+ */
+async function requestOtpBySms(phone: string) {
+  const code = generateOtpCode()
+  const challengeId = randomUUID()
+  const now = new Date()
+
+  await db.transaction(async (tx) => {
+    // Supersede any outstanding code for this number: only the newest code can
+    // ever be accepted.
+    await tx
+      .update(otpChallenges)
+      .set({ consumedAt: now })
+      .where(and(eq(otpChallenges.phone, phone), isNull(otpChallenges.consumedAt)))
+
+    await tx.insert(otpChallenges).values({
+      id: challengeId,
+      phone,
+      codeHash: hashCode(code),
+      expiresAt: new Date(now.getTime() + OTP_TTL_MS),
+    })
+  })
+
+  try {
+    // AuthKey takes the national number and the country code separately.
+    await sendSignInCode({ phone: canonicalPhone(phone), code })
+  } catch (error) {
+    await db
+      .update(otpChallenges)
+      .set({ consumedAt: new Date() })
+      .where(eq(otpChallenges.id, challengeId))
+
+    const reason = error instanceof Error ? error.message : 'unknown failure'
+    // The message is already credential-free: the adapter scrubs the key before
+    // it constructs it.
+    console.error(`[auth] could not deliver a sign-in code: ${reason}`)
+    throw new Error('OTP_DELIVERY_FAILED')
+  }
+
+  // Never disclosed: the code reached the phone that requested it.
+  return { challengeId, demoCode: undefined }
+}
+
+/** A six-digit code with no fixed prefix, from the CSPRNG. */
+function generateOtpCode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, '0')
 }
 
 export async function verifyOtp(phoneInput: string, otpInput: string) {

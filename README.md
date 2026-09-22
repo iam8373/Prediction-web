@@ -38,8 +38,10 @@ pnpm dev                    # http://localhost:3000
 1. Set `DATABASE_URL` to a PostgreSQL database. Tables are created on first use, so an
    empty database is fine (`DATABASE_SCHEMA_BOOTSTRAP`, below).
 2. Set `ADMIN_PHONES` to your own number for the admin screens. Unset means no admins.
-3. Sign-in uses a one-time code. Development uses `424242` and shows it on screen; in
-   production you must set `OTP_FIXED_CODE` (exactly 6 digits) or sign-in returns `503`
+3. Sign-in uses a one-time code. With `AUTHKEY_API_KEY` and `AUTHKEY_SENDER_ID` set, a
+   fresh code is generated per request and texted to the number that asked for it.
+   Without a gateway, development shows `424242` on screen, and a production
+   deployment must set `OTP_FIXED_CODE` (exactly 6 digits) or sign-in returns `503`
    rather than issuing a publicly known code.
 
 ## Environment variables
@@ -51,7 +53,8 @@ The full annotated list is `.env.example`. The ones that matter most:
 | `DATABASE_URL` | yes | Nothing renders without it. |
 | `DATABASE_SCHEMA_BOOTSTRAP` | no | Defaults to `auto`: missing tables, indexes and triggers are created on first use. Set `off` after running `pnpm db:bootstrap` as the schema owner, for a runtime role without DDL rights. |
 | `ADMIN_PHONES` | yes | Comma-separated digits. Unset means there are no admins. |
-| `OTP_FIXED_CODE` | yes in production | Exactly 6 digits; a deployment secret the operator shares out. |
+| `OTP_FIXED_CODE` | only without an SMS gateway | Exactly 6 digits; a deployment secret the operator shares out. Used when AuthKey is not configured. |
+| `AUTHKEY_API_KEY`, `AUTHKEY_SENDER_ID` | for SMS sign-in | Set both to text a real one-time code. `AUTHKEY_TEMPLATE_ID`, `AUTHKEY_OTP_VARIABLE` (default `otp`) and `AUTHKEY_COUNTRY_CODE` (default `91`) match the approved template on the AuthKey account. |
 | `TRUSTED_ORIGINS` | behind a proxy | Origins allowed to make state-changing requests. Same-origin requests never need listing. |
 | `PAYMENTS_MODE` | no | `demo` (default), `sandbox` or `live`. |
 | `PAYMENTS_ALLOW_SIMULATED_IN_PRODUCTION` | non-money sites | Production refuses to move balances through a simulated provider unless this is `true`. |
@@ -73,7 +76,8 @@ into a `500`.
 | `API_FOOTBALL_KEY=` | Upcoming football fixtures (API-Football) | The seeded football markets are shown. |
 | `YOUTUBE_API_KEY=` | Metadata for a video attached to a market (YouTube Data API v3) | A market page renders without the video card. |
 | `AUTHKEY_API_KEY=` | Sign-in one-time code by SMS (AuthKey) | `OTP_FIXED_CODE` is used instead, and the sign-in screen says the code was not sent by SMS. |
-| `AUTHKEY_SENDER_ID=` / `AUTHKEY_TEMPLATE_ID=` | Sender and template registered against the AuthKey account | Required for SMS delivery. |
+| `AUTHKEY_SENDER_ID=` / `AUTHKEY_TEMPLATE_ID=` | Sender id and template registered against the AuthKey account | SMS sign-in stays off. |
+| `AUTHKEY_OTP_VARIABLE=` / `AUTHKEY_COUNTRY_CODE=` | Template variable that carries the code (default `otp`) and the country code (default `91`) | Defaults are used. |
 | `PROVIDER_MARKET_LIQUIDITY_PAISE=` | Opening depth for a market created from a fixture | `1000000` (₹10,000). |
 
 Values go in the host's environment (Railway → *Variables*), never in the repository.

@@ -85,6 +85,24 @@ export async function POST(request: Request) {
       )
     }
 
+    if (error instanceof Error && error.message === 'OTP_DELIVERY_FAILED') {
+      // The code was generated but never delivered, and its challenge was
+      // consumed on the way out, so there is nothing left to guess. Say what
+      // happened rather than claiming a message is on its way.
+      await logSecurityEvent({
+        action: SECURITY_EVENTS.otpDeliveryFailed,
+        entityType: 'otpChallenge',
+        entityId: anonymisedClientRef(request),
+        summary: 'Could not deliver a sign-in code by SMS',
+        outcome: 'failed',
+        metadata: { environment: process.env.NODE_ENV ?? 'unknown' },
+      })
+      return NextResponse.json(
+        { ok: false, error: 'We could not send your code just now. Please try again.' },
+        { status: 503 },
+      )
+    }
+
     if (error instanceof Error && error.message === 'INVALID_OTP') {
       await recordOtpVerificationFailure()
       await logSecurityEvent({

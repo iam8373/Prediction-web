@@ -3,6 +3,7 @@ import 'server-only'
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 
+import { otpDeliveryChannel } from '@/lib/auth/admin'
 import { clearSession, createSession, DEMO_OTP, requestOtp, verifyOtp } from '@/lib/auth/session'
 import { closePool, createTestUser, databaseUrl, rawSql, resetDatabase, transactionsForUser, readWallet } from './harness.ts'
 
@@ -125,5 +126,47 @@ describe('Authentication data layer', () => {
     assert.equal((await transactionsForUser(user.id)).length, 0)
     const ledger = await rawSql<{ count: string }>('select count(*)::text as count from ledger_entry where user_id = $1', [user.id])
     assert.equal(Number(ledger[0].count), 0)
+  })
+
+  test('with an SMS gateway configured, the code is texted rather than shared', { skip }, async () => {
+    const realFetch = globalThis.fetch
+    const sent: string[] = []
+    process.env.AUTHKEY_API_KEY = 'test-authkey-key'
+    process.env.AUTHKEY_SENDER_ID = 'PREDIK'
+    globalThis.fetch = ((input: unknown) => {
+      sent.push(String(input))
+      return Promise.resolve(new Response(JSON.stringify({ Message: 'Submitted Successfully' }), { status: 200 }))
+    }) as typeof fetch
+
+    try {
+      assert.equal(otpDeliveryChannel(), 'sms', 'the sign-in screen is told a message goes out')
+
+      const phone = '9876500008'
+      const challenge = await requestOtp(phone)
+
+      assert.equal(challenge.demoCode, undefined, 'a code sent by SMS is never disclosed to the client')
+      assert.equal(sent.length, 1, 'exactly one message per request')
+      const delivered = new URL(sent[0]).searchParams.get('otp')
+      assert.match(delivered ?? '', /^\d{6}$/, 'the message carries a six digit code')
+
+      // The code that was actually sent is the one that works.
+      const user = await verifyOtp(phone, delivered as string)
+      assert.equal(user.phone, phone)
+
+      // The shared demo code is not a way in once a real code was issued.
+      await assert.rejects(() => verifyOtp('9876500009', DEMO_OTP), /INVALID_OTP/)
+
+      // A failed send must not leave a usable challenge behind.
+      globalThis.fetch = (() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ Message: 'Invalid authkey or insufficient balance' }), { status: 203 }),
+        )) as typeof fetch
+      await assert.rejects(() => requestOtp('9876500010'), /OTP_DELIVERY_FAILED/)
+      await assert.rejects(() => verifyOtp('9876500010', DEMO_OTP), /INVALID_OTP/)
+    } finally {
+      globalThis.fetch = realFetch
+      delete process.env.AUTHKEY_API_KEY
+      delete process.env.AUTHKEY_SENDER_ID
+    }
   })
 })

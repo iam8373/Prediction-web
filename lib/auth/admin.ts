@@ -17,7 +17,14 @@ import 'server-only'
  *   ADMIN_PHONES=9876543210,9123456780   admin allowlist, digits, comma separated
  *   OTP_FIXED_CODE=424242                test/demo code, only when explicitly set
  *   ALLOW_DEMO_OTP=true                  opt in to the built-in demo code
+ *
+ * Codes are delivered by SMS through AuthKey (`lib/providers/authkey-otp.ts`)
+ * whenever `AUTHKEY_API_KEY` and `AUTHKEY_SENDER_ID` are set. The fixed-code
+ * paths below are the fallback for a development machine, or for a deployment
+ * that has deliberately chosen not to configure a gateway.
  */
+
+import { authKeyConfigured } from '@/lib/providers/authkey-otp'
 
 export function normalisePhone(value: string): string {
   return value.replace(/\D/g, '')
@@ -102,13 +109,13 @@ export function resolveOtpCode(): OtpCodeDecision {
 /**
  * How a one-time code reaches the person signing in.
  *
- * `sms` means this deployment dispatched the code as a message. No SMS provider
- * is integrated in this codebase, so nothing is dispatched today and the sign-in
- * screen must not claim otherwise: every code issued here is a *shared* one —
- * either shown on the development sign-in screen or held by the operator as
- * `OTP_FIXED_CODE`. This is the single place to change once a delivery provider
- * is wired up.
+ * `sms` means this deployment dispatched the code as a message, which is true
+ * exactly when the AuthKey gateway is configured — the sign-in screen says a code
+ * was sent only in that case. Without it every code issued here is a *shared*
+ * one: shown on a development sign-in screen, or held by the operator as
+ * `OTP_FIXED_CODE`, and the screen says so instead of pretending a message went
+ * out.
  */
 export function otpDeliveryChannel(): 'sms' | 'shared-code' {
-  return 'shared-code'
+  return authKeyConfigured() ? 'sms' : 'shared-code'
 }

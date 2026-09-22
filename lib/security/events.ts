@@ -27,6 +27,8 @@ export const SECURITY_EVENTS = {
   otpThrottled: 'security.otp.throttled',
   /** Sign-in was refused because no OTP delivery is configured (production). */
   otpUnavailable: 'security.otp.unavailable',
+  /** A sign-in code was generated but the SMS gateway refused or could not deliver it. */
+  otpDeliveryFailed: 'security.otp.delivery_failed',
   uploadRejected: 'security.upload.rejected',
 } as const
 

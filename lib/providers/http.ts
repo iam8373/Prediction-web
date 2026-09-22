@@ -57,8 +57,30 @@ export class ProviderRequestError extends Error {
   }
 }
 
-/** Query parameters that carry a credential, in the spellings these APIs use. */
-const SECRET_QUERY_PARAMS = ['apikey', 'api_key', 'key', 'authkey', 'auth_key', 'token', 'access_token', 'secret', 'password', 'signature']
+/**
+ * Query parameters that carry a credential, in the spellings these APIs use.
+ *
+ * Syntactic secrets only — an API key, an access token, or a one-time code that
+ * is on its way to a user's phone. A one-time code belongs on this list as much
+ * as a key does: it is short-lived, but logging it would hand a reader a working
+ * sign-in for the number it was sent to.
+ */
+const SECRET_QUERY_PARAMS = [
+  'apikey',
+  'api_key',
+  'key',
+  'authkey',
+  'auth_key',
+  'token',
+  'access_token',
+  'secret',
+  'password',
+  'signature',
+  'otp',
+  'code',
+  'passcode',
+  'pin',
+]
 
 /**
  * Removes credentials from a URL so it can be logged.
