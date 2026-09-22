@@ -54,10 +54,18 @@ const SOURCE_FILES = [
 
 const PROVIDER_MODULES = filesUnder('lib/providers').filter((file) => file.endsWith('.ts'))
 
-/** Files that may legitimately read a provider credential. */
-const ALLOWED_SECRET_READERS = new Set(
-  PROVIDER_MODULES.filter((file) => !file.endsWith('/drafts.ts')),
-)
+/**
+ * Files that may legitimately read a provider credential.
+ *
+ * The adapters themselves, plus the launch-gate script, which reports whether
+ * sign-in can deliver a code — it reads the two AuthKey variables to answer
+ * "configured or not" and never prints a value. Listed by name rather than by
+ * pattern so a new reader has to be added here deliberately.
+ */
+const ALLOWED_SECRET_READERS = new Set([
+  ...PROVIDER_MODULES.filter((file) => !file.endsWith('/drafts.ts')),
+  'scripts/preflight.ts',
+])
 
 /** Client code: anything that runs in the browser. */
 const CLIENT_FILES = SOURCE_FILES.filter((file) => {
