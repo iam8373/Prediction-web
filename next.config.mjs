@@ -29,7 +29,12 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https:",
+  // Deliberately narrow. Every third-party API this app talks to (CricketData,
+  // API-Football, YouTube, AuthKey) is called from the server, and all browser
+  // requests are same-origin `/api/...`. `connect-src https:` would let any
+  // script that ever got into the bundle read from an arbitrary host, so only
+  // the payment provider's API is named explicitly.
+  "connect-src 'self' https://api.razorpay.com",
   "form-action 'self'",
   "base-uri 'self'",
   "object-src 'none'",

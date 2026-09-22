@@ -58,6 +58,29 @@ The full annotated list is `.env.example`. The ones that matter most:
 | `PAYMENTS_*` | see `.env.example` | Provider keys, payout account and the live-money activation gate. |
 | `RATE_LIMIT_<BUCKET>_LIMIT` / `_WINDOW_MS` | no | Override one limit, e.g. `RATE_LIMIT_OTP_REQUEST_PHONE_LIMIT=5`. |
 
+### Data providers
+
+Four optional integrations feed live data in. Every one is **server-side only** —
+the modules that read these keys are `import 'server-only'`, and the
+Content-Security-Policy in `next.config.mjs` does not let browser code reach any of
+these hosts. Each integration degrades to the demo catalogue when its key is absent,
+so none of them are required to run the app, and a provider outage can never turn
+into a `500`.
+
+| Variable | Purpose | When unset |
+| --- | --- | --- |
+| `CRICKETDATA_API_KEY=` | Upcoming and live cricket fixtures (CricketData.org) | The seeded cricket markets are shown. |
+| `API_FOOTBALL_KEY=` | Upcoming football fixtures (API-Football) | The seeded football markets are shown. |
+| `YOUTUBE_API_KEY=` | Metadata for a video attached to a market (YouTube Data API v3) | A market page renders without the video card. |
+| `AUTHKEY_API_KEY=` | Sign-in one-time code by SMS (AuthKey) | `OTP_FIXED_CODE` is used instead, and the sign-in screen says the code was not sent by SMS. |
+| `AUTHKEY_SENDER_ID=` / `AUTHKEY_TEMPLATE_ID=` | Sender and template registered against the AuthKey account | Required for SMS delivery. |
+| `PROVIDER_MARKET_LIQUIDITY_PAISE=` | Opening depth for a market created from a fixture | `1000000` (₹10,000). |
+
+Values go in the host's environment (Railway → *Variables*), never in the repository.
+`pnpm providers:smoke` calls each configured provider once and reports whether it
+answered, how long it took and how many markets it mapped — it never prints a
+credential or a response body.
+
 ## Scripts
 
 | Command | What it does |
@@ -70,6 +93,7 @@ The full annotated list is `.env.example`. The ones that matter most:
 | `pnpm test:all` | Both suites. |
 | `pnpm db:bootstrap` | Creates every table, index and trigger if missing. Idempotent and additive only; needs DDL rights. |
 | `pnpm preflight` | Read-only launch gate over configuration, the database and the accounting invariants. Exits `1` on any FAIL. |
+| `pnpm providers:smoke` | Calls each configured data provider once and reports status, timing and mapped counts. Credentials are never printed. |
 
 Health: `/api/health/live` is liveness (always `200`; use it as the platform health
 check) and `/api/health` is readiness (`200` when the database answers and the core
