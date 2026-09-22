@@ -25,8 +25,11 @@ import { ensurePaymentSchema } from '@/lib/db/payment-schema'
 import { publicPaymentConfig } from '@/lib/payments/config'
 import { safeCheckoutUrl } from '@/lib/security/url-safety'
 import type { PaymentDirection, PaymentStatus, ReconciliationStatus } from '@/lib/payments/state-machine'
+import { cache } from 'react'
+
 import { DEMO_NOW } from '@/lib/data/demo-config'
 import { syncProviderMarkets } from '@/lib/data/provider-markets'
+import { timed } from '@/lib/observability/timing'
 import { sortLabels } from '@/lib/data/market-filters'
 import type {
   AdminTransaction,
@@ -125,12 +128,27 @@ async function hydrateMarkets(rows: Array<typeof markets.$inferSelect>) {
 }
 
 export async function getAllMarkets() {
+  return timed('markets.all', loadAllMarkets)
+}
+
+async function loadAllMarkets() {
   await ensureCatalog()
   const rows = await db.select().from(markets)
   return hydrateMarkets(rows)
 }
 
-export async function getMarket(idOrSlug: string) {
+/**
+ * One market by id or slug.
+ *
+ * Wrapped in React's `cache` because a market page reads the same market twice
+ * in one render — once for `generateMetadata` and once for the page itself — and
+ * the second read would otherwise be a second round trip to the database.
+ */
+export const getMarket = cache(async (idOrSlug: string) =>
+  timed('market.detail', () => loadMarket(idOrSlug)),
+)
+
+async function loadMarket(idOrSlug: string) {
   await ensureCatalog()
   const rows = await db.select().from(markets).where(or(eq(markets.id, idOrSlug), eq(markets.slug, idOrSlug))).limit(1)
   const result = await hydrateMarkets(rows)
@@ -163,6 +181,10 @@ const sorters: Record<SortKey, (a: Market, b: Market) => number> = {
 }
 
 export async function queryMarkets(filters: MarketFilters = {}): Promise<Paginated<Market>> {
+  return timed('markets.query', () => loadMarketPage(filters))
+}
+
+async function loadMarketPage(filters: MarketFilters): Promise<Paginated<Market>> {
   const { category, query = '', sort = 'trending', status = 'live', page = 1, perPage = 12 } = filters
   const categoryId = category && category !== 'all'
     ? (await db
@@ -214,6 +236,10 @@ export async function resolvedMarkets(limit = 12) {
 }
 
 export async function platformStats() {
+  return timed('stats.platform', loadPlatformStats)
+}
+
+async function loadPlatformStats() {
   await ensureCatalog()
   const [result] = await db.select({
     volumePaise: sql<number>`coalesce(sum(${markets.volumePaise}), 0)`,
@@ -261,6 +287,11 @@ export interface LeaderboardRow {
 }
 
 export async function leaderboardFromDb(limit = 10): Promise<LeaderboardRow[]> {
+  return timed('leaderboard', () => loadLeaderboard(limit))
+}
+
+/** The most expensive read in the app: it aggregates every trader's positions. */
+async function loadLeaderboard(limit: number): Promise<LeaderboardRow[]> {
   await ensureCatalog()
   const [userRows, tradeRows, positionRows] = await Promise.all([
     db.select({ id: users.id, name: users.name }).from(users),
@@ -564,6 +595,10 @@ export async function listRecentWebhookEvents(limit = 20): Promise<PaymentWebhoo
 }
 
 export async function getAccountSnapshot(userId: string): Promise<AccountSnapshot> {
+  return timed('account.snapshot', () => loadAccountSnapshot(userId))
+}
+
+async function loadAccountSnapshot(userId: string): Promise<AccountSnapshot> {
   const [walletRows, positionRows, transactionRows, tradeRows, watchlistRows, notificationRows, unreadRows, tradeStatsRows, positionStatsRows, referralRows, paymentRows] = await Promise.all([
     db.select().from(wallets).where(eq(wallets.userId, userId)).limit(1),
     db.select().from(positions).where(eq(positions.userId, userId)).orderBy(desc(positions.updatedAt)),

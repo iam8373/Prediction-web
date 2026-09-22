@@ -97,15 +97,20 @@ async function main() {
 
   const hasFixedOtp = Boolean((process.env.OTP_FIXED_CODE ?? '').trim())
   const demoOtpAllowed = (process.env.ALLOW_DEMO_OTP ?? '').trim().toLowerCase() === 'true'
+  // Read here rather than through the provider module: this script stays
+  // dependency-free, and these are the same two variables the adapter needs.
+  const smsConfigured = Boolean((process.env.AUTHKEY_API_KEY ?? '').trim() && (process.env.AUTHKEY_SENDER_ID ?? '').trim())
   record(
     'Authentication',
     'sign-in code delivery',
-    hasFixedOtp ? 'PASS' : demoOtpAllowed ? 'WARN' : 'FAIL',
-    hasFixedOtp
-      ? 'OTP_FIXED_CODE is set (value never printed)'
-      : demoOtpAllowed
-        ? 'production is explicitly opted into the built-in demo code — anyone who knows it can sign in'
-        : 'neither OTP_FIXED_CODE nor an SMS provider is configured: sign-in is refused (fail closed)',
+    smsConfigured || hasFixedOtp ? 'PASS' : demoOtpAllowed ? 'WARN' : 'FAIL',
+    smsConfigured
+      ? 'AuthKey delivers a fresh code by SMS (credential never printed)'
+      : hasFixedOtp
+        ? 'OTP_FIXED_CODE is set (value never printed)'
+        : demoOtpAllowed
+          ? 'production is explicitly opted into the built-in demo code — anyone who knows it can sign in'
+          : 'neither an SMS gateway nor OTP_FIXED_CODE is configured: sign-in is refused (fail closed)',
   )
 
   record(
